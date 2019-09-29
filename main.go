@@ -6,10 +6,10 @@ import (
 	"encoding/csv"
 	"flag"
 	"fmt"
+	"github.com/dvassallo/s3-benchmark/obmark"
 	"io"
 	"io/ioutil"
 	"net/http"
-	"obmark"
 	"os"
 	"sort"
 	"strings"
@@ -91,8 +91,8 @@ var cleanupOnly bool
 // if not empty, the results of the test get uploaded to S3 using this key prefix
 var csvResults string
 
-// the S3 SDK client
-var client *obmark.ObjectClient
+// the client to operate on objects
+var client obmark.ObjectClient
 
 // program entry point
 func main() {
@@ -182,17 +182,16 @@ func parseFlags() {
 }
 
 func setupClient() {
-	client = obmark.Newclient(&obmark.ObjectClientConfig{
-		region:   region,
-		endpoint: endpoint,
+	client = obmark.NewS3Client(&obmark.ObjectClientConfig{
+		Region:   region,
+		Endpoint: endpoint,
 	})
 }
 
 func setup() {
 	fmt.Print("\n--- \033[1;32mSETUP\033[0m --------------------------------------------------------------------------------------------------------------------\n\n")
 
-	createBucketReq := client.CreateBucketRequest(bucketName, region)
-	_, err := createBucketReq.Send()
+	err := client.CreateBucket(bucketName, region)
 
 	// if the error is because the bucket already exists, ignore the error
 	if err != nil && !strings.Contains(err.Error(), "BucketAlreadyOwnedByYou:") {
@@ -226,9 +225,7 @@ func setup() {
 			key := generateS3Key(hostname, t, objectSize)
 
 			// do a HeadObject request to avoid uploading the object if it already exists from a previous test run
-			headReq := client.HeadObjectRequest(bucketName, key)
-
-			_, err := headReq.Send()
+			err := client.HeadObject(bucketName, key)
 
 			// if no error, then the object exists, so skip this one
 			if err == nil {
@@ -244,9 +241,7 @@ func setup() {
 			payload := make([]byte, objectSize)
 
 			// do a PutObject request to create the object
-			putReq := client.PutObjectRequest(bucketName, key, bytes.NewReader(payload))
-
-			_, err = putReq.Send()
+			err = client.PutObject(bucketName, key, bytes.NewReader(payload))
 
 			// if the put fails, exit
 			if err != nil {
@@ -303,9 +298,7 @@ func runBenchmark() {
 		key := "results/" + csvResults + "-" + instanceType
 
 		// do the PutObject request
-		putReq := client.PutObjectRequest(bucketName, key, bytes.NewReader(b.Bytes()))
-
-		_, err := putReq.Send()
+		err := client.PutObject(bucketName, key, bytes.NewReader(b.Bytes()))
 
 		// if the request fails, exit
 		if err != nil {
@@ -337,9 +330,7 @@ func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][
 				latencyTimer := time.Now()
 
 				// do the GetObject request
-				req := client.GetObjectRequest(bucketName, key)
-
-				resp, err := req.Send()
+				dataStream, err := client.GetObject(bucketName, key)
 
 				// if a request fails, exit
 				if err != nil {
@@ -355,7 +346,7 @@ func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][
 				// read the s3 object body into the buffer
 				size := 0
 				for {
-					n, err := resp.Body.Read(buf)
+					n, err := dataStream.Read(buf)
 
 					size += n
 
@@ -369,7 +360,7 @@ func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][
 					}
 				}
 
-				_ = resp.Body.Close()
+				_ = dataStream.Close()
 
 				// measure the last byte latency
 				lastByte := time.Now().Sub(latencyTimer)
@@ -532,9 +523,7 @@ func cleanup() {
 			key := generateS3Key(hostname, t, payloadSize)
 
 			// make a DeleteObject request
-			headReq := client.DeleteObjectRequest(bucketName, key)
-
-			_, err := headReq.Send()
+			err := client.DeleteObject(bucketName, key)
 
 			// if the object doesn't exist, ignore the error
 			if err != nil && !strings.HasPrefix(err.Error(), "NotFound: Not Found") {

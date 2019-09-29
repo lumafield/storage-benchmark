@@ -2,6 +2,7 @@ package obmark
 
 import (
 	"bytes"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -15,7 +16,7 @@ type S3ObjectClient struct {
 	delegate *s3.S3
 }
 
-func NewS3Client(obConfig *ObjectClientConfig) *S3ObjectClient {
+func NewS3Client(obConfig *ObjectClientConfig) ObjectClient {
 	// gets the AWS credentials from the default file or from the EC2 instance profile
 	cfg, err := external.LoadDefaultAWSConfig()
 	if err != nil {
@@ -23,11 +24,11 @@ func NewS3Client(obConfig *ObjectClientConfig) *S3ObjectClient {
 	}
 
 	// set the SDK region to either the one from the program arguments or else to the same region as the EC2 instance
-	cfg.Region = obConfig.region
+	cfg.Region = obConfig.Region
 
 	// set the endpoint in the configuration
-	if obConfig.endpoint != "" {
-		cfg.EndpointResolver = aws.ResolveWithEndpointURL(obConfig.endpoint)
+	if obConfig.Endpoint != "" {
+		cfg.EndpointResolver = aws.ResolveWithEndpointURL(obConfig.Endpoint)
 	}
 
 	// set a 3-minute timeout for all S3 calls, including downloading the body
@@ -39,8 +40,8 @@ func NewS3Client(obConfig *ObjectClientConfig) *S3ObjectClient {
 	var s3Client = s3.New(cfg)
 
 	// custom endpoints don't generally work with the bucket in the host prefix
-	if obConfig.endpoint != "" {
-		s3Client.forcePathStyle = true
+	if obConfig.Endpoint != "" {
+		s3Client.ForcePathStyle = true
 	}
 
 	return &S3ObjectClient{
@@ -48,9 +49,8 @@ func NewS3Client(obConfig *ObjectClientConfig) *S3ObjectClient {
 	}
 }
 
-func (c *S3ObjectClient) CreateBucketRequest(bucketName string, region string) ObjectRequest {
+func (c *S3ObjectClient) CreateBucket(bucketName string, region string) error {
 	s3Client := c.delegate
-
 	// try to create the S3 bucket
 	createBucketReq := s3Client.CreateBucketRequest(&s3.CreateBucketInput{
 		Bucket: aws.String(bucketName),
@@ -67,38 +67,47 @@ func (c *S3ObjectClient) CreateBucketRequest(bucketName string, region string) O
 		})
 	}
 
-	return createBucketReq
+	_, err := createBucketReq.Send()
+	return err
 }
 
-func (c *S3ObjectClient) HeadObjectRequest(bucketName string, key string) ObjectRequest {
+func (c *S3ObjectClient) HeadObject(bucketName string, key string) error {
 	s3Client := c.delegate
-	return s3Client.HeadObjectRequest(&s3.HeadObjectInput{
+	headReq := s3Client.HeadObjectRequest(&s3.HeadObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
+	_, err := headReq.Send()
+	return err
 }
 
-func (c *S3ObjectClient) PutObjectRequest(bucketName string, key string, reader *bytes.Reader) ObjectRequest {
+func (c *S3ObjectClient) PutObject(bucketName string, key string, reader *bytes.Reader) error {
 	s3Client := c.delegate
-	return s3Client.PutObjectRequest(&s3.PutObjectInput{
+	putReq := s3Client.PutObjectRequest(&s3.PutObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 		Body:   reader,
 	})
+	_, err := putReq.Send()
+	return err
 }
 
-func (c *S3ObjectClient) GetObjectRequest(bucketName string, key string) ObjectRequest {
+func (c *S3ObjectClient) GetObject(bucketName string, key string) (io.ReadCloser, error) {
 	s3Client := c.delegate
-	return s3Client.GetObjectRequest(&s3.GetObjectInput{
+	req := s3Client.GetObjectRequest(&s3.GetObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
+	resp, err := req.Send()
+	return resp.Body, err
 }
 
-func (c *S3ObjectClient) DeleteObjectRequest(bucketName string, key string) ObjectRequest {
+func (c *S3ObjectClient) DeleteObject(bucketName string, key string) error {
 	s3Client := c.delegate
-	return s3Client.DeleteObjectRequest(&s3.DeleteObjectInput{
+	headReq := s3Client.DeleteObjectRequest(&s3.DeleteObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
+	_, err := headReq.Send()
+	return err
 }
