@@ -182,16 +182,23 @@ func parseFlags() {
 }
 
 func setupClient() {
-	client = obmark.NewS3Client(&obmark.ObjectClientConfig{
-		Region:   region,
-		Endpoint: endpoint,
-	})
+	if !strings.HasPrefix(strings.ToLower(endpoint), "http") {
+		client = obmark.NewFsClient(&obmark.ObjectClientConfig{
+			Region:   region,
+			Endpoint: endpoint,
+		})
+	} else {
+		client = obmark.NewS3Client(&obmark.ObjectClientConfig{
+			Region:   region,
+			Endpoint: endpoint,
+		})
+	}
 }
 
 func setup() {
 	fmt.Print("\n--- \033[1;32mSETUP\033[0m --------------------------------------------------------------------------------------------------------------------\n\n")
 
-	err := client.CreateBucket(bucketName, region)
+	err := client.CreateBucket(bucketName)
 
 	// if the error is because the bucket already exists, ignore the error
 	if err != nil && !strings.Contains(err.Error(), "BucketAlreadyOwnedByYou:") {

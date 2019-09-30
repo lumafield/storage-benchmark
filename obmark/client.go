@@ -7,7 +7,7 @@ import (
 
 // Specific Object API abstraction used to create benchmarks for
 type ObjectClient interface {
-	CreateBucket(bucketName string, region string) error
+	CreateBucket(bucketName string) error
 	HeadObject(bucket string, key string) error
 	PutObject(bucket string, key string, reader *bytes.Reader) error
 	GetObject(bucket string, key string) (io.ReadCloser, error)

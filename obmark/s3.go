@@ -14,6 +14,7 @@ import (
 
 type S3ObjectClient struct {
 	delegate *s3.S3
+	cfg *ObjectClientConfig
 }
 
 func NewS3Client(obConfig *ObjectClientConfig) ObjectClient {
@@ -46,11 +47,13 @@ func NewS3Client(obConfig *ObjectClientConfig) ObjectClient {
 
 	return &S3ObjectClient{
 		delegate: s3Client,
+		cfg: obConfig,
 	}
 }
 
-func (c *S3ObjectClient) CreateBucket(bucketName string, region string) error {
+func (c *S3ObjectClient) CreateBucket(bucketName string) error {
 	s3Client := c.delegate
+	region := c.cfg.Region
 	// try to create the S3 bucket
 	createBucketReq := s3Client.CreateBucketRequest(&s3.CreateBucketInput{
 		Bucket: aws.String(bucketName),
