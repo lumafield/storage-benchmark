@@ -108,11 +108,14 @@ func main() {
 		return
 	}
 
-	// create the S3 bucket and upload the test data
-	setup()
+	// create the S3 bucket
+	createBenchmarkBucket()
+
+	// upload the test data
+	uploadObjects()
 
 	// run the test against the uploaded data
-	runBenchmark()
+	downloadObjects()
 
 	// remove the objects uploaded to S3 for this test (but doesn't remove the bucket)
 	cleanup()
@@ -195,7 +198,7 @@ func setupClient() {
 	}
 }
 
-func setup() {
+func createBenchmarkBucket() {
 	fmt.Print("\n--- \033[1;32mSETUP\033[0m --------------------------------------------------------------------------------------------------------------------\n\n")
 
 	err := client.CreateBucket(bucketName)
@@ -204,7 +207,9 @@ func setup() {
 	if err != nil && !strings.Contains(err.Error(), "BucketAlreadyOwnedByYou:") {
 		panic("Failed to create S3 bucket: " + err.Error())
 	}
+}
 
+func uploadObjects() {
 	// an object size iterator that starts from 1 KB and doubles the size on every iteration
 	generatePayload := payloadSizeGenerator()
 
@@ -260,7 +265,7 @@ func setup() {
 	}
 }
 
-func runBenchmark() {
+func downloadObjects() {
 	fmt.Print("\n--- \033[1;32mBENCHMARK\033[0m ----------------------------------------------------------------------------------------------------------------\n\n")
 
 	// array of csv records used to upload the results to S3 when the test is finished
