@@ -115,7 +115,7 @@ func main() {
 	uploadObjects()
 
 	// run the test against the uploaded data
-	downloadObjects()
+	runReadBenchmark()
 
 	// remove the objects uploaded to S3 for this test (but doesn't remove the bucket)
 	cleanup()
@@ -265,7 +265,7 @@ func uploadObjects() {
 	}
 }
 
-func downloadObjects() {
+func runReadBenchmark() {
 	fmt.Print("\n--- \033[1;32mBENCHMARK\033[0m ----------------------------------------------------------------------------------------------------------------\n\n")
 
 	// array of csv records used to upload the results to S3 when the test is finished
@@ -338,44 +338,7 @@ func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][
 				// generate an S3 key from the sha hash of the hostname, thread index, and object size
 				key := generateS3Key(hostname, o, payloadSize)
 
-				// start the timer to measure the first byte and last byte latencies
-				latencyTimer := time.Now()
-
-				// do the GetObject request
-				dataStream, err := client.GetObject(bucketName, key)
-
-				// if a request fails, exit
-				if err != nil {
-					panic("Failed to get object: " + err.Error())
-				}
-
-				// measure the first byte latency
-				firstByte := time.Now().Sub(latencyTimer)
-
-				// create a buffer to copy the S3 object body to
-				var buf = make([]byte, payloadSize)
-
-				// read the s3 object body into the buffer
-				size := 0
-				for {
-					n, err := dataStream.Read(buf)
-
-					size += n
-
-					if err == io.EOF {
-						break
-					}
-
-					// if the streaming fails, exit
-					if err != nil {
-						panic("Error reading object body: " + err.Error())
-					}
-				}
-
-				_ = dataStream.Close()
-
-				// measure the last byte latency
-				lastByte := time.Now().Sub(latencyTimer)
+				firstByte, lastByte := measureReadPerformanceForSingleObject(key, payloadSize)
 
 				// add the latency result to the results channel
 				results <- latency{FirstByte: firstByte, LastByte: lastByte}
@@ -478,6 +441,41 @@ func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][
 	})
 
 	return csvRecords
+}
+
+func measureReadPerformanceForSingleObject(key string, payloadSize uint64) (firstByte time.Duration, lastByte time.Duration) {
+	// start the timer to measure the first byte and last byte latencies
+	latencyTimer := time.Now()
+	// do the GetObject request
+	dataStream, err := client.GetObject(bucketName, key)
+	// if a request fails, exit
+	if err != nil {
+		panic("Failed to get object: " + err.Error())
+	}
+	// measure the first byte latency
+	firstByte = time.Now().Sub(latencyTimer)
+	// create a buffer to copy the S3 object body to
+	var buf = make([]byte, payloadSize)
+	// read the s3 object body into the buffer
+	size := 0
+	for {
+		n, err := dataStream.Read(buf)
+
+		size += n
+
+		if err == io.EOF {
+			break
+		}
+
+		// if the streaming fails, exit
+		if err != nil {
+			panic("Error reading object body: " + err.Error())
+		}
+	}
+	_ = dataStream.Close()
+	// measure the last byte latency
+	lastByte = time.Now().Sub(latencyTimer)
+	return firstByte, lastByte
 }
 
 // prints the table header for the test results
