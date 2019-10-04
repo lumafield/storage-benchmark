@@ -94,6 +94,9 @@ var csvResults string
 // the client to operate on objects
 var client obmark.ObjectClient
 
+// operations might be "read" or "write. Default is "read".
+var operationToTest string
+
 // program entry point
 func main() {
 	// parse the program arguments and set the global variables
@@ -111,11 +114,11 @@ func main() {
 	// create the bucket
 	createBenchmarkBucket()
 
-	// upload the test data
+	// upload the test data (if needed)
 	uploadObjects()
 
 	// run the test against the uploaded data
-	runReadBenchmark()
+	runBenchmark()
 
 	// remove the objects uploaded for this test (but doesn't remove the bucket)
 	cleanup()
@@ -134,6 +137,7 @@ func parseFlags() {
 	throttlingModeArg := flag.Bool("throttling-mode", false, "Runs a continuous test to find out when EC2 network throttling kicks in.")
 	cleanupArg := flag.Bool("cleanup", false, "Cleans all the objects uploaded for this test.")
 	csvResultsArg := flag.String("upload-csv", "", "Uploads the test results as a CSV file.")
+	operationArg := flag.String("operation", "read", "Specify if you want to measure 'read' or 'write'. Default is 'read'")
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
@@ -182,6 +186,13 @@ func parseFlags() {
 		payloadsMax = 15 // 16 MB
 		throttlingMode = *throttlingModeArg
 	}
+
+	if *operationArg != "" {
+		if *operationArg != "read" && *operationArg != "write" {
+			panic("Unknown operation '"+*operationArg +"'. Please use 'read' or 'write'")
+		}
+		operationToTest = *operationArg
+	}
 }
 
 func setupClient() {
@@ -210,6 +221,11 @@ func createBenchmarkBucket() {
 }
 
 func uploadObjects() {
+	// If "write" operation should be tested, we don't need to upload test data.
+	if operationToTest == "write" {
+		return
+	}
+
 	// an object size iterator that starts from 1 KB and doubles the size on every iteration
 	generatePayload := payloadSizeGenerator()
 
@@ -265,7 +281,7 @@ func uploadObjects() {
 	}
 }
 
-func runReadBenchmark() {
+func runBenchmark() {
 	fmt.Print("\n--- \033[1;32mBENCHMARK\033[0m ----------------------------------------------------------------------------------------------------------------\n\n")
 
 	// array of csv records used to upload the results when the test is finished
@@ -338,7 +354,12 @@ func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][
 				// generate an object key from the sha hash of the hostname, thread index, and object size
 				key := generateObjectKey(hostname, o, payloadSize)
 
-				firstByte, lastByte := measureReadPerformanceForSingleObject(key, payloadSize)
+				var firstByte, lastByte time.Duration
+				if operationToTest == "write" {
+					firstByte, lastByte = measureWritePerformanceForSingleObject(key, payloadSize)
+				} else {
+					firstByte, lastByte = measureReadPerformanceForSingleObject(key, payloadSize)
+				}
 
 				// add the latency result to the results channel
 				results <- latency{FirstByte: firstByte, LastByte: lastByte}
@@ -475,6 +496,30 @@ func measureReadPerformanceForSingleObject(key string, payloadSize uint64) (firs
 	_ = dataStream.Close()
 	// measure the last byte latency
 	lastByte = time.Now().Sub(latencyTimer)
+	return firstByte, lastByte
+}
+
+func measureWritePerformanceForSingleObject(key string, payloadSize uint64) (firstByte time.Duration, lastByte time.Duration) {
+	// generate empty payload
+	payload := make([]byte, payloadSize)
+
+	// start the timer to measure the first byte and last byte latencies
+	latencyTimer := time.Now()
+
+	// measure the first byte latency
+	firstByte = time.Now().Sub(latencyTimer)
+
+	// do a PutObject request to create the object
+	err := client.PutObject(bucketName, key, bytes.NewReader(payload))
+
+	// measure the last byte latency
+	lastByte = time.Now().Sub(latencyTimer)
+
+	// if a request fails, exit
+	if err != nil {
+		panic("Failed to put object: " + err.Error())
+	}
+
 	return firstByte, lastByte
 }
 
