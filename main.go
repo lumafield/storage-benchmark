@@ -541,7 +541,11 @@ func printHeader(objectSize uint64) {
 	}
 
 	// print the table header
-	fmt.Printf("Download performance with \033[1;33m%-s\033[0m objects%s\n", byteFormat(float64(objectSize)), instanceTypeString)
+	testType := "Download"
+	if operationToTest == "write" {
+		testType = "Upload"
+	}
+	fmt.Printf("%s performance with \033[1;33m%-s\033[0m objects%s\n", testType, byteFormat(float64(objectSize)), instanceTypeString)
 	fmt.Println("                           +-------------------------------------------------------------------------------------------------+")
 	fmt.Println("                           |            Time to First Byte (ms)             |            Time to Last Byte (ms)              |")
 	fmt.Println("+---------+----------------+------------------------------------------------+------------------------------------------------+")
