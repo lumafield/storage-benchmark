@@ -289,6 +289,7 @@ func runBenchmark() {
 
 	// an object size iterator that starts from 1 KB and doubles the size on every iteration
 	generatePayload := payloadSizeGenerator()
+	writeRunNumber := 0
 
 	// loop over every payload size
 	for p := 1; p <= payloadsMax; p++ {
@@ -305,11 +306,17 @@ func runBenchmark() {
 
 		// run a test per thread count and object size combination
 		for t := threadsMin; t <= threadsMax; t++ {
-			// if throttling mode, loop forever
-			for n := 1; true; n++ {
-				csvRecords = execTest(t, payload, n, csvRecords)
-				if !throttlingMode {
-					break
+			if operationToTest == "write" {
+				// must change run id to prevent collisions
+				writeRunNumber++
+				csvRecords = execTest(t, payload, writeRunNumber, csvRecords)
+			} else {
+				// if throttling mode, loop forever
+				for n := 1; true; n++ {
+					csvRecords = execTest(t, payload, n, csvRecords)
+					if !throttlingMode {
+						break
+					}
 				}
 			}
 		}
@@ -351,13 +358,14 @@ func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][
 	for w := 1; w <= threadCount; w++ {
 		go func(o int, tasks <-chan int, results chan<- latency) {
 			for range tasks {
-				// generate an object key from the sha hash of the hostname, thread index, and object size
-				key := generateObjectKey(hostname, o, payloadSize)
-
 				var firstByte, lastByte time.Duration
 				if operationToTest == "write" {
+					// generate an object key from the sha hash of the current run id, thread index, and object size
+					key := generateObjectKey(string(runNumber), o, payloadSize)
 					firstByte, lastByte = measureWritePerformanceForSingleObject(key, payloadSize)
 				} else {
+					// generate an object key from the sha hash of the hostname, thread index, and object size
+					key := generateObjectKey(hostname, o, payloadSize)
 					firstByte, lastByte = measureReadPerformanceForSingleObject(key, payloadSize)
 				}
 
