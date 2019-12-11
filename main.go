@@ -586,19 +586,23 @@ func cleanup() {
 			// increment the progress bar
 			_ = bar.Add(1)
 
-			// generate an object key from the sha hash of the hostname, thread index, and object size
-			key := generateObjectKey(hostname, t, payloadSize)
-
-			// make a DeleteObject request
-			err := client.DeleteObject(bucketName, key)
-
-			// if the object doesn't exist, ignore the error
-			if err != nil && !strings.HasPrefix(err.Error(), "NotFound: Not Found") {
-				panic("Failed to delete object: " + err.Error())
-			}
+			deleteSingleObject(hostname, t, payloadSize)
 		}
 	}
 	fmt.Print("\n\n")
+}
+
+func deleteSingleObject(runNumber string, threadIdx int, payloadSize uint64) {
+	// generate an object key from the sha hash of the hostname, thread index, and object size
+	key := generateObjectKey(runNumber, threadIdx, payloadSize)
+
+	// make a DeleteObject request
+	err := client.DeleteObject(bucketName, key)
+
+	// if the object doesn't exist, ignore the error
+	if err != nil && !strings.HasPrefix(err.Error(), "NotFound: Not Found") {
+		panic("Failed to delete object: " + err.Error())
+	}
 }
 
 // gets the hostname or the EC2 instance ID
