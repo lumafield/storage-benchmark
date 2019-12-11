@@ -576,6 +576,8 @@ func cleanup() {
 	// an object size iterator that starts from 1 KB and doubles the size on every iteration
 	generatePayload := payloadSizeGenerator()
 
+	runNumber := 0
+
 	// loop over every payload size
 	for p := 1; p <= maxPayload; p++ {
 		// get an object size from the iterator
@@ -585,8 +587,14 @@ func cleanup() {
 		for t := 1; t <= maxThreads; t++ {
 			// increment the progress bar
 			_ = bar.Add(1)
-
-			deleteSingleObject(hostname, t, payloadSize)
+			runNumber++
+			if operationToTest == "write" {
+				for n := 1; n <= t; n++ {
+					deleteSingleObject(string(n), t, payloadSize)
+				}
+			} else {
+				deleteSingleObject(hostname, t, payloadSize)
+			}
 		}
 	}
 	fmt.Print("\n\n")
