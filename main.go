@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -595,8 +596,10 @@ func printHeader(objectSize uint64) {
 
 // generates an object key from the sha hash of the hostname, thread index, and object size
 func generateObjectKey(host string, threadIndex int, payloadSize uint64) string {
+	var key string
 	keyHash := sha1.Sum([]byte(fmt.Sprintf("%s-%03d-%012d", host, threadIndex, payloadSize)))
-	key := fmt.Sprintf("%x", keyHash)
+	folder := strconv.Itoa(int(payloadSize))
+	key = folder + "/" + (fmt.Sprintf("%x", keyHash))
 	return key
 }
 
