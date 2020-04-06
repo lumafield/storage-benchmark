@@ -9,8 +9,11 @@ import (
 	"github.com/dvassallo/s3-benchmark/obmark"
 	"io"
 	"io/ioutil"
+	log2 "log"
+	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -99,10 +102,19 @@ var operationToTest string
 
 var createBucket bool
 
+// path for log file
+var logPath string
+
+// add a logging
+var logger *log2.Logger
+
 // program entry point
 func main() {
 	// parse the program arguments and set the global variables
 	parseFlags()
+
+	//
+	setupLogger()
 
 	// set up the client SDK
 	setupClient()
@@ -143,6 +155,7 @@ func parseFlags() {
 	csvResultsArg := flag.String("upload-csv", "", "Uploads the test results as a CSV file.")
 	operationArg := flag.String("operation", "read", "Specify if you want to measure 'read' or 'write'. Default is 'read'")
 	createBucketArg := flag.Bool("create-bucket", false, "create new bucket(default false)")
+	logPathArg := flag.String("log-path", "", "Specify the path of the log file. Default is 'currentDir'")
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
@@ -167,6 +180,12 @@ func parseFlags() {
 	cleanupOnly = *cleanupArg
 	csvResults = *csvResultsArg
 	createBucket = *createBucketArg
+
+	if *logPathArg == "" {
+		logPath,_ = os.Getwd()
+	}else{
+		logPath = *logPathArg
+	}
 
 	if payloadsMin > payloadsMax {
 		payloadsMin = payloadsMax
@@ -201,12 +220,16 @@ func parseFlags() {
 	}
 }
 
+func setupLogger(){
+	file, _ := os.OpenFile(filepath.FromSlash(logPath+"/") + "s3-benchmark.log", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
+	logger = log2.New(file,"s3-benchmark",log2.Ldate + log2.Ltime + log2.Lshortfile + log2.Lmsgprefix)
+}
+
 func setupClient() {
 	if !strings.HasPrefix(strings.ToLower(endpoint), "http") {
 		client = obmark.NewFsClient(&obmark.ObjectClientConfig{
 			Region:   region,
-			Endpoint: endpoint,
-		})
+			Endpoint: endpoint,		})
 	} else {
 		client = obmark.NewS3Client(&obmark.ObjectClientConfig{
 			Region:   region,
@@ -514,26 +537,33 @@ func measureReadPerformanceForSingleObject(key string, payloadSize uint64) (firs
 }
 
 func measureWritePerformanceForSingleObject(key string, payloadSize uint64) (firstByte time.Duration, lastByte time.Duration) {
-	// generate empty payload
-	payload := make([]byte, payloadSize)
+	i := 0
+	for true {
+		// generate empty payload
+		payload := make([]byte, payloadSize)
+		if i > 0 {
+			key = generateObjectKey(string(time.Now().Nanosecond()), rand.Intn(1000), payloadSize)
+			logger.Println(" Info: Generate new key with value '" +  key + "'" )
+		}
+		// start the timer to measure the first byte and last byte latencies
+		latencyTimer := time.Now()
 
-	// start the timer to measure the first byte and last byte latencies
-	latencyTimer := time.Now()
+		// measure the first byte latency
+		firstByte = time.Now().Sub(latencyTimer)
 
-	// measure the first byte latency
-	firstByte = time.Now().Sub(latencyTimer)
+		// do a PutObject request to create the object
+		err := client.PutObject(bucketName,  key , bytes.NewReader(payload))
 
-	// do a PutObject request to create the object
-	err := client.PutObject(bucketName, key, bytes.NewReader(payload))
-
-	// measure the last byte latency
-	lastByte = time.Now().Sub(latencyTimer)
-
-	// if a request fails, exit
-	if err != nil {
-		panic("Failed to put object: " + err.Error())
+		// measure the last byte latency
+		lastByte = time.Now().Sub(latencyTimer)
+		switch err {
+		case nil:
+			return
+		default:
+			logger.Println(" Error during request:" + err.Error())
+			i++
+		}
 	}
-
 	return firstByte, lastByte
 }
 
