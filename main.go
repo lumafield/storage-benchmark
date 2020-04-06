@@ -97,6 +97,8 @@ var client obmark.ObjectClient
 // operations might be "read" or "write. Default is "read".
 var operationToTest string
 
+var createBucket bool
+
 // program entry point
 func main() {
 	// parse the program arguments and set the global variables
@@ -111,8 +113,10 @@ func main() {
 		return
 	}
 
-	// create the bucket
-	createBenchmarkBucket()
+	if createBucket {
+		// create the bucket
+		createBenchmarkBucket()
+	}
 
 	// upload the test data (if needed)
 	uploadObjects()
@@ -138,6 +142,7 @@ func parseFlags() {
 	cleanupArg := flag.Bool("cleanup", false, "Cleans all the objects uploaded for this test.")
 	csvResultsArg := flag.String("upload-csv", "", "Uploads the test results as a CSV file.")
 	operationArg := flag.String("operation", "read", "Specify if you want to measure 'read' or 'write'. Default is 'read'")
+	createBucketArg := flag.Bool("create-bucket", false, "create new bucket(default false)")
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
@@ -161,6 +166,7 @@ func parseFlags() {
 	samples = *samplesArg
 	cleanupOnly = *cleanupArg
 	csvResults = *csvResultsArg
+	createBucket = *createBucketArg
 
 	if payloadsMin > payloadsMax {
 		payloadsMin = payloadsMax
