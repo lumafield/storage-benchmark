@@ -109,6 +109,9 @@ var logPath string
 // add a logging
 var logger *log2.Logger
 
+// flag for a load test
+var infiniteMode bool
+
 // program entry point
 func main() {
 	// parse the program arguments and set the global variables
@@ -157,6 +160,7 @@ func parseFlags() {
 	operationArg := flag.String("operation", "read", "Specify if you want to measure 'read' or 'write'. Default is 'read'")
 	createBucketArg := flag.Bool("create-bucket", false, "create new bucket(default false)")
 	logPathArg := flag.String("log-path", "", "Specify the path of the log file. Default is 'currentDir'")
+	infiniteModeArg := flag.Bool("infinite-mode",false,"Run the tests in a infinite loop. 'Read' or 'Write' depends on the value of operation flag. Default is 'false'")
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
@@ -211,6 +215,18 @@ func parseFlags() {
 		payloadsMin = 15 // 16 MB
 		payloadsMax = 15 // 16 MB
 		throttlingMode = *throttlingModeArg
+	}
+
+	if *infiniteModeArg{
+		if payloadsMax != payloadsMin{
+			fmt.Println("paylaod-min and paylaods-max must to be equal")
+			os.Exit(-1)
+		}
+		if threadsMin != threadsMax{
+			fmt.Println("threads-min and threads-max must be equal")
+			os.Exit(-1)
+		}
+		infiniteMode = *infiniteModeArg
 	}
 
 	if *operationArg != "" {
@@ -338,13 +354,18 @@ func runBenchmark() {
 		for t := threadsMin; t <= threadsMax; t++ {
 			if operationToTest == "write" {
 				// must change run id to prevent collisions
-				writeRunNumber++
-				csvRecords = execTest(t, payload, writeRunNumber, csvRecords)
+				for true {
+					writeRunNumber++
+					csvRecords = execTest(t, payload, writeRunNumber, csvRecords)
+					if !infiniteMode {
+						break
+					}
+				}
 			} else {
-				// if throttling mode, loop forever
+				// if throttling mode or infinite mode, loop forever
 				for n := 1; true; n++ {
 					csvRecords = execTest(t, payload, n, csvRecords)
-					if !throttlingMode {
+					if !throttlingMode && !infiniteMode {
 						break
 					}
 				}
@@ -599,8 +620,26 @@ func generateObjectKey(host string, threadIndex int, payloadSize uint64) string 
 	var key string
 	keyHash := sha1.Sum([]byte(fmt.Sprintf("%s-%03d-%012d", host, threadIndex, payloadSize)))
 	folder := strconv.Itoa(int(payloadSize))
-	key = folder + "/" + (fmt.Sprintf("%x", keyHash))
+	if operationToTest == "write" && infiniteMode {
+		key = folder +
+			"/" + generateRandomString(threadIndex) +
+		 	"/" + generateRandomString(threadIndex) +
+			"/" + (fmt.Sprintf("%x", keyHash))
+	}else{
+		key = folder + "/" + (fmt.Sprintf("%x", keyHash))
+	}
 	return key
+}
+
+func generateRandomString(seed int) string{
+	rand.Seed(time.Now().UnixNano())
+	chars := []rune("1234")
+	length := 4
+	var b strings.Builder
+	for i := 0; i < length; i++ {
+		b.WriteRune(chars[rand.Intn(len(chars))])
+	}
+	return b.String()
 }
 
 // cleans up the uploaded objects for this test (but doesn't remove the bucket)
