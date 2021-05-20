@@ -2,6 +2,7 @@ package obmark
 
 import (
 	"bytes"
+	"crypto/tls"
 	"io"
 	"net/http"
 	"strings"
@@ -32,9 +33,14 @@ func NewS3Client(obConfig *ObjectClientConfig) ObjectClient {
 		cfg.EndpointResolver = aws.ResolveWithEndpointURL(obConfig.Endpoint)
 	}
 
+	// trust all certificates
+	tr := &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: obConfig.Insecure},
+	}
 	// set a 3-minute timeout for all S3 calls, including downloading the body
 	cfg.HTTPClient = &http.Client{
 		Timeout: time.Second * 180,
+		Transport: tr,
 	}
 
 	// crete the S3 client
