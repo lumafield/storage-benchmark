@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type FsObjectClient struct {
@@ -23,8 +24,18 @@ func (c *FsObjectClient) bucketPath(bucketName string) string {
 }
 
 func (c *FsObjectClient) objectPath(bucketName string, key string) string {
-	return filepath.Join(c.rootPath, bucketName, key)
+	return  c.createDirectory(filepath.Join(c.rootPath, bucketName), key)
 }
+
+func (c *FsObjectClient) createDirectory(path string, key string) string{
+	splitteKey := strings.Split(key,"/")
+	_, err := os.Stat(filepath.Join(path, splitteKey[0]))
+	if os.IsNotExist(err) {
+		os.Mkdir(filepath.Join(path, splitteKey[0]), os.ModePerm)
+	}
+	return filepath.Join(path, splitteKey[0], splitteKey[1] )
+}
+
 
 func (c *FsObjectClient) CreateBucket(bucketName string) error {
 	return os.MkdirAll(c.bucketPath(bucketName), os.ModePerm)

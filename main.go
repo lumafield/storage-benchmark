@@ -9,9 +9,13 @@ import (
 	"github.com/dvassallo/s3-benchmark/obmark"
 	"io"
 	"io/ioutil"
+	log2 "log"
+	"math/rand"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -97,10 +101,24 @@ var client obmark.ObjectClient
 // operations might be "read" or "write. Default is "read".
 var operationToTest string
 
+var createBucket bool
+
+// path for log file
+var logPath string
+
+// add a logging
+var logger *log2.Logger
+
+// flag for a load test
+var infiniteMode bool
+
 // program entry point
 func main() {
 	// parse the program arguments and set the global variables
 	parseFlags()
+
+	//
+	setupLogger()
 
 	// set up the client SDK
 	setupClient()
@@ -111,8 +129,10 @@ func main() {
 		return
 	}
 
-	// create the bucket
-	createBenchmarkBucket()
+	if createBucket {
+		// create the bucket
+		createBenchmarkBucket()
+	}
 
 	// upload the test data (if needed)
 	uploadObjects()
@@ -138,6 +158,9 @@ func parseFlags() {
 	cleanupArg := flag.Bool("cleanup", false, "Cleans all the objects uploaded for this test.")
 	csvResultsArg := flag.String("upload-csv", "", "Uploads the test results as a CSV file.")
 	operationArg := flag.String("operation", "read", "Specify if you want to measure 'read' or 'write'. Default is 'read'")
+	createBucketArg := flag.Bool("create-bucket", false, "create new bucket(default false)")
+	logPathArg := flag.String("log-path", "", "Specify the path of the log file. Default is 'currentDir'")
+	infiniteModeArg := flag.Bool("infinite-mode",false,"Run the tests in a infinite loop. 'Read' or 'Write' depends on the value of operation flag. Default is 'false'")
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
@@ -161,6 +184,13 @@ func parseFlags() {
 	samples = *samplesArg
 	cleanupOnly = *cleanupArg
 	csvResults = *csvResultsArg
+	createBucket = *createBucketArg
+
+	if *logPathArg == "" {
+		logPath,_ = os.Getwd()
+	}else{
+		logPath = *logPathArg
+	}
 
 	if payloadsMin > payloadsMax {
 		payloadsMin = payloadsMax
@@ -187,6 +217,18 @@ func parseFlags() {
 		throttlingMode = *throttlingModeArg
 	}
 
+	if *infiniteModeArg{
+		if payloadsMax != payloadsMin{
+			fmt.Println("paylaod-min and paylaods-max must to be equal")
+			os.Exit(-1)
+		}
+		if threadsMin != threadsMax{
+			fmt.Println("threads-min and threads-max must be equal")
+			os.Exit(-1)
+		}
+		infiniteMode = *infiniteModeArg
+	}
+
 	if *operationArg != "" {
 		if *operationArg != "read" && *operationArg != "write" {
 			panic("Unknown operation '"+*operationArg +"'. Please use 'read' or 'write'")
@@ -195,12 +237,16 @@ func parseFlags() {
 	}
 }
 
+func setupLogger(){
+	file, _ := os.OpenFile(filepath.FromSlash(logPath+"/") + "s3-benchmark.log", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
+	logger = log2.New(file,"s3-benchmark",log2.Ldate + log2.Ltime + log2.Lshortfile + log2.Lmsgprefix)
+}
+
 func setupClient() {
 	if !strings.HasPrefix(strings.ToLower(endpoint), "http") {
 		client = obmark.NewFsClient(&obmark.ObjectClientConfig{
 			Region:   region,
-			Endpoint: endpoint,
-		})
+			Endpoint: endpoint,		})
 	} else {
 		client = obmark.NewS3Client(&obmark.ObjectClientConfig{
 			Region:   region,
@@ -308,13 +354,18 @@ func runBenchmark() {
 		for t := threadsMin; t <= threadsMax; t++ {
 			if operationToTest == "write" {
 				// must change run id to prevent collisions
-				writeRunNumber++
-				csvRecords = execTest(t, payload, writeRunNumber, csvRecords)
+				for true {
+					writeRunNumber++
+					csvRecords = execTest(t, payload, writeRunNumber, csvRecords)
+					if !infiniteMode {
+						break
+					}
+				}
 			} else {
-				// if throttling mode, loop forever
+				// if throttling mode or infinite mode, loop forever
 				for n := 1; true; n++ {
 					csvRecords = execTest(t, payload, n, csvRecords)
-					if !throttlingMode {
+					if !throttlingMode && !infiniteMode {
 						break
 					}
 				}
@@ -439,7 +490,7 @@ func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][
 	}
 
 	// print the results to stdout
-	fmt.Printf("| %7d | \033[1;31m%9.1f MB/s\033[0m |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |\n",
+	fmt.Printf("| %7d | \033[1;31m%9.3f MB/s\033[0m |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |\n",
 		c, rate,
 		benchmarkRecord.firstByte[avg], benchmarkRecord.firstByte[min], benchmarkRecord.firstByte[p25], benchmarkRecord.firstByte[p50], benchmarkRecord.firstByte[p75], benchmarkRecord.firstByte[p90], benchmarkRecord.firstByte[p99], benchmarkRecord.firstByte[max],
 		benchmarkRecord.lastByte[avg], benchmarkRecord.lastByte[min], benchmarkRecord.lastByte[p25], benchmarkRecord.lastByte[p50], benchmarkRecord.lastByte[p75], benchmarkRecord.lastByte[p90], benchmarkRecord.lastByte[p99], benchmarkRecord.lastByte[max])
@@ -508,26 +559,33 @@ func measureReadPerformanceForSingleObject(key string, payloadSize uint64) (firs
 }
 
 func measureWritePerformanceForSingleObject(key string, payloadSize uint64) (firstByte time.Duration, lastByte time.Duration) {
-	// generate empty payload
-	payload := make([]byte, payloadSize)
+	i := 0
+	for true {
+		// generate empty payload
+		payload := make([]byte, payloadSize)
+		if i > 0 {
+			key = generateObjectKey(string(time.Now().Nanosecond()), rand.Intn(1000), payloadSize)
+			logger.Println(" Info: Generate new key with value '" +  key + "'" )
+		}
+		// start the timer to measure the first byte and last byte latencies
+		latencyTimer := time.Now()
 
-	// start the timer to measure the first byte and last byte latencies
-	latencyTimer := time.Now()
+		// measure the first byte latency
+		firstByte = time.Now().Sub(latencyTimer)
 
-	// measure the first byte latency
-	firstByte = time.Now().Sub(latencyTimer)
+		// do a PutObject request to create the object
+		err := client.PutObject(bucketName,  key , bytes.NewReader(payload))
 
-	// do a PutObject request to create the object
-	err := client.PutObject(bucketName, key, bytes.NewReader(payload))
-
-	// measure the last byte latency
-	lastByte = time.Now().Sub(latencyTimer)
-
-	// if a request fails, exit
-	if err != nil {
-		panic("Failed to put object: " + err.Error())
+		// measure the last byte latency
+		lastByte = time.Now().Sub(latencyTimer)
+		switch err {
+		case nil:
+			return
+		default:
+			logger.Println(" Error during request:" + err.Error())
+			i++
+		}
 	}
-
 	return firstByte, lastByte
 }
 
@@ -559,9 +617,29 @@ func printHeader(objectSize uint64) {
 
 // generates an object key from the sha hash of the hostname, thread index, and object size
 func generateObjectKey(host string, threadIndex int, payloadSize uint64) string {
+	var key string
 	keyHash := sha1.Sum([]byte(fmt.Sprintf("%s-%03d-%012d", host, threadIndex, payloadSize)))
-	key := fmt.Sprintf("%x", keyHash)
+	folder := strconv.Itoa(int(payloadSize))
+	if operationToTest == "write" && infiniteMode {
+		key = folder +
+			"/" + generateRandomString(threadIndex) +
+		 	"/" + generateRandomString(threadIndex) +
+			"/" + (fmt.Sprintf("%x", keyHash))
+	}else{
+		key = folder + "/" + (fmt.Sprintf("%x", keyHash))
+	}
 	return key
+}
+
+func generateRandomString(seed int) string{
+	rand.Seed(time.Now().UnixNano())
+	chars := []rune("1234")
+	length := 4
+	var b strings.Builder
+	for i := 0; i < length; i++ {
+		b.WriteRune(chars[rand.Intn(len(chars))])
+	}
+	return b.String()
 }
 
 // cleans up the uploaded objects for this test (but doesn't remove the bucket)
