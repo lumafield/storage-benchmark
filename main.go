@@ -52,10 +52,6 @@ type benchmark struct {
 	dataPoints []latency
 }
 
-// absolute limits
-const maxPayload = 18
-const maxThreads = 64
-
 // default settings
 const defaultRegion = "us-west-2"
 const bucketNamePrefix = "object-benchmark"
@@ -651,7 +647,7 @@ func cleanup() {
 	fmt.Printf("Deleting any objects uploaded from %s\n", hostname)
 
 	// create a progress bar
-	bar := progressbar.NewOptions(maxPayload*maxThreads-1, progressbar.OptionSetRenderBlankState(true))
+	bar := progressbar.NewOptions(payloadsMax*threadsMax-1, progressbar.OptionSetRenderBlankState(true))
 
 	// an object size iterator that starts from 1 KB and doubles the size on every iteration
 	generatePayload := payloadSizeGenerator()
@@ -659,12 +655,12 @@ func cleanup() {
 	runNumber := 0
 
 	// loop over every payload size
-	for p := 1; p <= maxPayload; p++ {
+	for p := 1; p <= payloadsMax; p++ {
 		// get an object size from the iterator
 		payloadSize := generatePayload()
 
 		// loop over each possible thread to clean up objects from any previous test execution
-		for t := 1; t <= maxThreads; t++ {
+		for t := 1; t <= threadsMax; t++ {
 			// increment the progress bar
 			_ = bar.Add(1)
 			runNumber++
