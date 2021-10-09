@@ -245,12 +245,13 @@ func setupLogger(){
 func setupClient() {
 	if !strings.HasPrefix(strings.ToLower(endpoint), "http") {
 		client = obmark.NewFsClient(&obmark.ObjectClientConfig{
-			Region:   region,
-			Endpoint: endpoint,		})
+			Endpoint: endpoint,		
+		})
 	} else {
 		client = obmark.NewS3Client(&obmark.ObjectClientConfig{
 			Region:   region,
 			Endpoint: endpoint,
+			Insecure: true,
 		})
 	}
 }
