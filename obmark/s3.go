@@ -15,7 +15,7 @@ import (
 
 type S3ObjectClient struct {
 	delegate *s3.S3
-	cfg *ObjectClientConfig
+	cfg      *ObjectClientConfig
 }
 
 func NewS3Client(obConfig *ObjectClientConfig) ObjectClient {
@@ -39,7 +39,7 @@ func NewS3Client(obConfig *ObjectClientConfig) ObjectClient {
 	}
 	// set a 3-minute timeout for all S3 calls, including downloading the body
 	cfg.HTTPClient = &http.Client{
-		Timeout: time.Second * 180,
+		Timeout:   time.Second * 180,
 		Transport: tr,
 	}
 
@@ -53,7 +53,7 @@ func NewS3Client(obConfig *ObjectClientConfig) ObjectClient {
 
 	return &S3ObjectClient{
 		delegate: s3Client,
-		cfg: obConfig,
+		cfg:      obConfig,
 	}
 }
 

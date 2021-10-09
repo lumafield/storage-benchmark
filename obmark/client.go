@@ -15,7 +15,7 @@ type ObjectClient interface {
 }
 
 type ObjectClientConfig struct {
-	Region string
+	Region   string
 	Endpoint string
 	Insecure bool
 }

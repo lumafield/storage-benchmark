@@ -24,18 +24,17 @@ func (c *FsObjectClient) bucketPath(bucketName string) string {
 }
 
 func (c *FsObjectClient) objectPath(bucketName string, key string) string {
-	return  c.createDirectory(filepath.Join(c.rootPath, bucketName), key)
+	return c.createDirectory(filepath.Join(c.rootPath, bucketName), key)
 }
 
-func (c *FsObjectClient) createDirectory(path string, key string) string{
-	splitteKey := strings.Split(key,"/")
+func (c *FsObjectClient) createDirectory(path string, key string) string {
+	splitteKey := strings.Split(key, "/")
 	_, err := os.Stat(filepath.Join(path, splitteKey[0]))
 	if os.IsNotExist(err) {
 		os.Mkdir(filepath.Join(path, splitteKey[0]), os.ModePerm)
 	}
-	return filepath.Join(path, splitteKey[0], splitteKey[1] )
+	return filepath.Join(path, splitteKey[0], splitteKey[1])
 }
-
 
 func (c *FsObjectClient) CreateBucket(bucketName string) error {
 	return os.MkdirAll(c.bucketPath(bucketName), os.ModePerm)
@@ -46,7 +45,7 @@ func (c *FsObjectClient) HeadObject(bucketName string, key string) error {
 	if os.IsExist(err) {
 		return nil
 	}
-	return errors.New("NotFound: "+c.objectPath(bucketName, key))
+	return errors.New("NotFound: " + c.objectPath(bucketName, key))
 }
 
 func (c *FsObjectClient) PutObject(bucketName string, key string, reader *bytes.Reader) error {
@@ -70,4 +69,3 @@ func (c *FsObjectClient) DeleteObject(bucketName string, key string) error {
 	}
 	return nil
 }
-

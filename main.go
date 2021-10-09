@@ -6,7 +6,6 @@ import (
 	"encoding/csv"
 	"flag"
 	"fmt"
-	"github.com/dvassallo/s3-benchmark/obmark"
 	"io"
 	"io/ioutil"
 	log2 "log"
@@ -18,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dvassallo/s3-benchmark/obmark"
 
 	"github.com/schollz/progressbar/v2"
 )
@@ -160,7 +161,7 @@ func parseFlags() {
 	operationArg := flag.String("operation", "read", "Specify if you want to measure 'read' or 'write'. Default is 'read'")
 	createBucketArg := flag.Bool("create-bucket", false, "create new bucket(default false)")
 	logPathArg := flag.String("log-path", "", "Specify the path of the log file. Default is 'currentDir'")
-	infiniteModeArg := flag.Bool("infinite-mode",false,"Run the tests in a infinite loop. 'Read' or 'Write' depends on the value of operation flag. Default is 'false'")
+	infiniteModeArg := flag.Bool("infinite-mode", false, "Run the tests in a infinite loop. 'Read' or 'Write' depends on the value of operation flag. Default is 'false'")
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
@@ -187,8 +188,8 @@ func parseFlags() {
 	createBucket = *createBucketArg
 
 	if *logPathArg == "" {
-		logPath,_ = os.Getwd()
-	}else{
+		logPath, _ = os.Getwd()
+	} else {
 		logPath = *logPathArg
 	}
 
@@ -217,12 +218,12 @@ func parseFlags() {
 		throttlingMode = *throttlingModeArg
 	}
 
-	if *infiniteModeArg{
-		if payloadsMax != payloadsMin{
+	if *infiniteModeArg {
+		if payloadsMax != payloadsMin {
 			fmt.Println("paylaod-min and paylaods-max must to be equal")
 			os.Exit(-1)
 		}
-		if threadsMin != threadsMax{
+		if threadsMin != threadsMax {
 			fmt.Println("threads-min and threads-max must be equal")
 			os.Exit(-1)
 		}
@@ -231,21 +232,21 @@ func parseFlags() {
 
 	if *operationArg != "" {
 		if *operationArg != "read" && *operationArg != "write" {
-			panic("Unknown operation '"+*operationArg +"'. Please use 'read' or 'write'")
+			panic("Unknown operation '" + *operationArg + "'. Please use 'read' or 'write'")
 		}
 		operationToTest = *operationArg
 	}
 }
 
-func setupLogger(){
-	file, _ := os.OpenFile(filepath.FromSlash(logPath+"/") + "s3-benchmark.log", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
-	logger = log2.New(file,"s3-benchmark",log2.Ldate + log2.Ltime + log2.Lshortfile + log2.Lmsgprefix)
+func setupLogger() {
+	file, _ := os.OpenFile(filepath.FromSlash(logPath+"/")+"s3-benchmark.log", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
+	logger = log2.New(file, "s3-benchmark", log2.Ldate+log2.Ltime+log2.Lshortfile+log2.Lmsgprefix)
 }
 
 func setupClient() {
 	if !strings.HasPrefix(strings.ToLower(endpoint), "http") {
 		client = obmark.NewFsClient(&obmark.ObjectClientConfig{
-			Endpoint: endpoint,		
+			Endpoint: endpoint,
 		})
 	} else {
 		client = obmark.NewS3Client(&obmark.ObjectClientConfig{
@@ -566,7 +567,7 @@ func measureWritePerformanceForSingleObject(key string, payloadSize uint64) (fir
 		payload := make([]byte, payloadSize)
 		if i > 0 {
 			key = generateObjectKey(string(time.Now().Nanosecond()), rand.Intn(1000), payloadSize)
-			logger.Println(" Info: Generate new key with value '" +  key + "'" )
+			logger.Println(" Info: Generate new key with value '" + key + "'")
 		}
 		// start the timer to measure the first byte and last byte latencies
 		latencyTimer := time.Now()
@@ -575,7 +576,7 @@ func measureWritePerformanceForSingleObject(key string, payloadSize uint64) (fir
 		firstByte = time.Now().Sub(latencyTimer)
 
 		// do a PutObject request to create the object
-		err := client.PutObject(bucketName,  key , bytes.NewReader(payload))
+		err := client.PutObject(bucketName, key, bytes.NewReader(payload))
 
 		// measure the last byte latency
 		lastByte = time.Now().Sub(latencyTimer)
@@ -624,15 +625,15 @@ func generateObjectKey(host string, threadIndex int, payloadSize uint64) string 
 	if operationToTest == "write" && infiniteMode {
 		key = folder +
 			"/" + generateRandomString(threadIndex) +
-		 	"/" + generateRandomString(threadIndex) +
+			"/" + generateRandomString(threadIndex) +
 			"/" + (fmt.Sprintf("%x", keyHash))
-	}else{
+	} else {
 		key = folder + "/" + (fmt.Sprintf("%x", keyHash))
 	}
 	return key
 }
 
-func generateRandomString(seed int) string{
+func generateRandomString(seed int) string {
 	rand.Seed(time.Now().UnixNano())
 	chars := []rune("1234")
 	length := 4
