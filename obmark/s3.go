@@ -2,6 +2,7 @@ package obmark
 
 import (
 	"bytes"
+	"context"
 	"crypto/tls"
 	"io"
 	"net/http"
@@ -14,7 +15,7 @@ import (
 )
 
 type S3ObjectClient struct {
-	delegate *s3.S3
+	delegate *s3.Client
 	cfg      *ObjectClientConfig
 }
 
@@ -76,7 +77,7 @@ func (c *S3ObjectClient) CreateBucket(bucketName string) error {
 		})
 	}
 
-	_, err := createBucketReq.Send()
+	_, err := createBucketReq.Send(context.Background())
 	return err
 }
 
@@ -86,7 +87,7 @@ func (c *S3ObjectClient) HeadObject(bucketName string, key string) error {
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
-	_, err := headReq.Send()
+	_, err := headReq.Send(context.Background())
 	return err
 }
 
@@ -97,7 +98,7 @@ func (c *S3ObjectClient) PutObject(bucketName string, key string, reader *bytes.
 		Key:    aws.String(key),
 		Body:   reader,
 	})
-	_, err := putReq.Send()
+	_, err := putReq.Send(context.Background())
 	return err
 }
 
@@ -107,7 +108,7 @@ func (c *S3ObjectClient) GetObject(bucketName string, key string) (io.ReadCloser
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
-	resp, err := req.Send()
+	resp, err := req.Send(context.Background())
 	return resp.Body, err
 }
 
@@ -117,6 +118,6 @@ func (c *S3ObjectClient) DeleteObject(bucketName string, key string) error {
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
-	_, err := headReq.Send()
+	_, err := headReq.Send(context.Background())
 	return err
 }
