@@ -6,11 +6,10 @@ import (
 	"crypto/tls"
 	"io"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/aws/external"
+	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
@@ -21,18 +20,27 @@ type S3ObjectClient struct {
 
 func NewS3Client(obConfig *ObjectClientConfig) ObjectClient {
 	// gets the AWS credentials from the default file or from the EC2 instance profile
-	cfg, err := external.LoadDefaultAWSConfig()
+	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
 		panic("Unable to load AWS SDK config: " + err.Error())
 	}
 
-	// set the SDK region to either the one from the program arguments or else to the same region as the EC2 instance
-	cfg.Region = obConfig.Region
-
 	// set the endpoint in the configuration
 	if obConfig.Endpoint != "" {
-		cfg.EndpointResolver = aws.ResolveWithEndpointURL(obConfig.Endpoint)
+		customResolver := aws.EndpointResolverFunc(func(service, region string) (aws.Endpoint, error) {
+			return aws.Endpoint{
+				URL: obConfig.Endpoint,
+			}, nil
+		})
+
+		cfg, err = config.LoadDefaultConfig(context.TODO(), config.WithEndpointResolver(customResolver))
+		if err != nil {
+			panic("Unable to load AWS SDK config: " + err.Error())
+		}
 	}
+
+	// set the SDK region to either the one from the program arguments or else to the same region as the EC2 instance
+	cfg.Region = obConfig.Region
 
 	// trust all certificates
 	tr := &http.Transport{
@@ -44,13 +52,13 @@ func NewS3Client(obConfig *ObjectClientConfig) ObjectClient {
 		Transport: tr,
 	}
 
-	// crete the S3 client
-	var s3Client = s3.New(cfg)
-
 	// custom endpoints don't generally work with the bucket in the host prefix
-	if obConfig.Endpoint != "" {
-		s3Client.ForcePathStyle = true
+	usePathStyleOptFunc := func(options *s3.Options) {
+		options.UsePathStyle = obConfig.Endpoint != ""
 	}
+
+	// crete the S3 client
+	var s3Client = s3.NewFromConfig(cfg, usePathStyleOptFunc)
 
 	return &S3ObjectClient{
 		delegate: s3Client,
@@ -60,64 +68,45 @@ func NewS3Client(obConfig *ObjectClientConfig) ObjectClient {
 
 func (c *S3ObjectClient) CreateBucket(bucketName string) error {
 	s3Client := c.delegate
-	region := c.cfg.Region
-	// try to create the S3 bucket
-	createBucketReq := s3Client.CreateBucketRequest(&s3.CreateBucketInput{
+	_, err := s3Client.CreateBucket(context.TODO(), &s3.CreateBucketInput{
 		Bucket: aws.String(bucketName),
-		CreateBucketConfiguration: &s3.CreateBucketConfiguration{
-			LocationConstraint: s3.NormalizeBucketLocation(s3.BucketLocationConstraint(region)),
-		},
 	})
-
-	// AWS S3 has this peculiar issue in which if you want to create bucket in us-east-1 region, you should NOT specify
-	// any location constraint. https://github.com/boto/boto3/issues/125
-	if strings.ToLower(region) == "us-east-1" {
-		createBucketReq = s3Client.CreateBucketRequest(&s3.CreateBucketInput{
-			Bucket: aws.String(bucketName),
-		})
-	}
-
-	_, err := createBucketReq.Send(context.Background())
 	return err
 }
 
 func (c *S3ObjectClient) HeadObject(bucketName string, key string) error {
 	s3Client := c.delegate
-	headReq := s3Client.HeadObjectRequest(&s3.HeadObjectInput{
+	_, err := s3Client.HeadObject(context.TODO(), &s3.HeadObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
-	_, err := headReq.Send(context.Background())
 	return err
 }
 
 func (c *S3ObjectClient) PutObject(bucketName string, key string, reader *bytes.Reader) error {
 	s3Client := c.delegate
-	putReq := s3Client.PutObjectRequest(&s3.PutObjectInput{
+	_, err := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 		Body:   reader,
 	})
-	_, err := putReq.Send(context.Background())
 	return err
 }
 
 func (c *S3ObjectClient) GetObject(bucketName string, key string) (io.ReadCloser, error) {
 	s3Client := c.delegate
-	req := s3Client.GetObjectRequest(&s3.GetObjectInput{
+	resp, err := s3Client.GetObject(context.TODO(), &s3.GetObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
-	resp, err := req.Send(context.Background())
 	return resp.Body, err
 }
 
 func (c *S3ObjectClient) DeleteObject(bucketName string, key string) error {
 	s3Client := c.delegate
-	headReq := s3Client.DeleteObjectRequest(&s3.DeleteObjectInput{
+	_, err := s3Client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
-	_, err := headReq.Send(context.Background())
 	return err
 }
