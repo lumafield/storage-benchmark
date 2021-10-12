@@ -16,8 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dvassallo/s3-benchmark/obmark"
-
+	"github.com/iternity-dotcom/storage-benchmark/sbmark"
 	"github.com/schollz/progressbar/v2"
 )
 
@@ -51,7 +50,7 @@ type benchmark struct {
 }
 
 // default settings
-const bucketNamePrefix = "object-benchmark"
+const bucketNamePrefix = "storage-benchmark"
 
 // the hostname where this benchmark is executed from
 var hostname = getHostname()
@@ -87,7 +86,7 @@ var cleanupOnly bool
 var csvResults string
 
 // the client to operate on objects
-var client obmark.ObjectClient
+var client sbmark.BenchmarkAPI
 
 // operations might be "read" or "write. Default is "read".
 var operationToTest string
@@ -229,17 +228,17 @@ func parseFlags() {
 }
 
 func setupLogger() {
-	file, _ := os.OpenFile(filepath.FromSlash(logPath+"/")+"s3-benchmark.log", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
-	logger = log2.New(file, "s3-benchmark", log2.Ldate+log2.Ltime+log2.Lshortfile+log2.Lmsgprefix)
+	file, _ := os.OpenFile(filepath.FromSlash(logPath+"/")+"storage-benchmark.log", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
+	logger = log2.New(file, "storage-benchmark", log2.Ldate+log2.Ltime+log2.Lshortfile+log2.Lmsgprefix)
 }
 
 func setupClient() {
 	if !strings.HasPrefix(strings.ToLower(endpoint), "http") {
-		client = obmark.NewFsClient(&obmark.ObjectClientConfig{
-			Endpoint: endpoint,
+		client = sbmark.NewFsClient(&sbmark.FsObjectClientConfig{
+			RootPath: endpoint,
 		})
 	} else {
-		client = obmark.NewS3Client(&obmark.ObjectClientConfig{
+		client = sbmark.NewS3Client(&sbmark.S3ObjectClientConfig{
 			Region:   region,
 			Endpoint: endpoint,
 			Insecure: true,

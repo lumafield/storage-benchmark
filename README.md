@@ -1,4 +1,6 @@
-# S3 Benchmark
+# Storage Benchmark
+
+(Originally forked from dvassallo/s3-benchmark)
 
 The performance of a storage system depends on 3 things:
 1. Your distance to the storage endpoint.
@@ -13,25 +15,25 @@ With this tool you can measure the performance of different file and object (S3)
 
 #### macOS
 ```
-curl -OL https://github.com/iternity-dotcom/s3-benchmark/raw/iternity/build/darwin-amd64/s3-benchmark
+curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/build/darwin-amd64/storage-benchmark
 ```
 
 #### Linux 64-bit x86
 
 ```
-curl -OL https://github.com/iternity-dotcom/s3-benchmark/raw/iternity/linux-amd64/s3-benchmark
+curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/linux-amd64/storage-benchmark
 ```
 
 #### Linux 64-bit ARM
 
 ```
-curl -OL https://github.com/iternity-dotcom/s3-benchmark/raw/iternity/build/linux-arm64/s3-benchmark
+curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/build/linux-arm64/storage-benchmark
 ```
 
 #### Windows 64-bit x86
 
 ```
-curl -OL https://github.com/iternity-dotcom/s3-benchmark/raw/iternity/build/windows-amd64/s3-benchmark
+curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/build/windows-amd64/storage-benchmark
 
 ### S3 Credentials
 
@@ -42,17 +44,12 @@ For testing S3 endpoints the tool needs credentials with full S3 permissions. Th
 Make the file executable:
 
 ```
-chmod +x s3-benchmark
+chmod +x storage-benchmark
 ```
 
-Run a quick test (takes a few minutes):
+Run the --help command to get an overview of the possible parameters
 ```
-./s3-benchmark
-```
-
-Or run the full test (takes a few hours):
-```
-./s3-benchmark -full
+./storage-benchmark --help
 ```
 
 ### Build

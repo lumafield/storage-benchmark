@@ -1,4 +1,4 @@
-module github.com/dvassallo/s3-benchmark
+module github.com/iternity-dotcom/storage-benchmark
 
 go 1.15
 
