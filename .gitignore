@@ -48,3 +48,6 @@ vendor/
 # Other
 *.log
 launch.json
+
+# Allow
+!storage-benchmark.exe
