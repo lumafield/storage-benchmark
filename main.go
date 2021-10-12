@@ -248,7 +248,7 @@ func setupClient() {
 }
 
 func createBenchmarkBucket() {
-	fmt.Print("\n--- \033[1;32mSETUP\033[0m --------------------------------------------------------------------------------------------------------------------\n\n")
+	fmt.Print("\n--- SETUP --------------------------------------------------------------------------------------------------------------------\n\n")
 
 	err := client.CreateBucket(bucketName)
 
@@ -277,7 +277,7 @@ func uploadObjects() {
 			continue
 		}
 
-		fmt.Printf("Uploading \033[1;33m%-s\033[0m objects\n", byteFormat(float64(objectSize)))
+		fmt.Printf("Uploading %-s objects\n", byteFormat(float64(objectSize)))
 
 		// create a progress bar
 		bar := progressbar.NewOptions(threadsMax-1, progressbar.OptionSetRenderBlankState(true))
@@ -320,7 +320,7 @@ func uploadObjects() {
 }
 
 func runBenchmark() {
-	fmt.Print("\n--- \033[1;32mBENCHMARK\033[0m ----------------------------------------------------------------------------------------------------------------\n\n")
+	fmt.Print("\n--- BENCHMARK ----------------------------------------------------------------------------------------------------------------\n\n")
 
 	// array of csv records used to upload the results when the test is finished
 	var csvRecords [][]string
@@ -383,7 +383,7 @@ func runBenchmark() {
 			panic("Failed to put object: " + err.Error())
 		}
 
-		fmt.Printf("CSV results uploaded to \033[1;33m %s/%s/%s\033[0m\n", endpoint, bucketName, key)
+		fmt.Printf("CSV results uploaded to %s/%s/%s\n", endpoint, bucketName, key)
 	}
 }
 
@@ -479,7 +479,7 @@ func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][
 	}
 
 	// print the results to stdout
-	fmt.Printf("| %7d | \033[1;31m%9.3f MB/s\033[0m |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |\n",
+	fmt.Printf("| %7d | %9.3f MB/s |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |\n",
 		c, rate,
 		benchmarkRecord.firstByte[avg], benchmarkRecord.firstByte[min], benchmarkRecord.firstByte[p25], benchmarkRecord.firstByte[p50], benchmarkRecord.firstByte[p75], benchmarkRecord.firstByte[p90], benchmarkRecord.firstByte[p99], benchmarkRecord.firstByte[max],
 		benchmarkRecord.lastByte[avg], benchmarkRecord.lastByte[min], benchmarkRecord.lastByte[p25], benchmarkRecord.lastByte[p50], benchmarkRecord.lastByte[p75], benchmarkRecord.lastByte[p90], benchmarkRecord.lastByte[p99], benchmarkRecord.lastByte[max])
@@ -585,7 +585,7 @@ func printHeader(objectSize uint64) {
 	if operationToTest == "write" {
 		testTitle = "Write performance to"
 	}
-	fmt.Printf("%s %s with \033[1;33m%-s\033[0m objects\n", testTitle, endpoint, byteFormat(float64(objectSize)))
+	fmt.Printf("%s %s with %-s objects\n", testTitle, endpoint, byteFormat(float64(objectSize)))
 	fmt.Println("                           +-------------------------------------------------------------------------------------------------+")
 	fmt.Println("                           |            Time to First Byte (ms)             |            Time to Last Byte (ms)              |")
 	fmt.Println("+---------+----------------+------------------------------------------------+------------------------------------------------+")
@@ -626,7 +626,7 @@ func generateRandomString(seed int) string {
 
 // cleans up the uploaded objects for this test (but doesn't remove the bucket)
 func cleanup() {
-	fmt.Print("\n--- \033[1;32mCLEANUP\033[0m ------------------------------------------------------------------------------------------------------------------\n\n")
+	fmt.Print("\n--- CLEANUP ------------------------------------------------------------------------------------------------------------------\n\n")
 
 	fmt.Printf("Deleting any objects uploaded from %s to %s\n", hostname, endpoint)
 
