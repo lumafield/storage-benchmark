@@ -7,10 +7,8 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	log2 "log"
 	"math/rand"
-	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
@@ -23,7 +21,7 @@ import (
 	"github.com/schollz/progressbar/v2"
 )
 
-// represents the duration from making an GetObject/Read request to getting the first byte and last byte
+// represents the duration from making an operation to getting the first byte and last byte
 type latency struct {
 	FirstByte time.Duration
 	LastByte  time.Duration
@@ -53,20 +51,16 @@ type benchmark struct {
 }
 
 // default settings
-const defaultRegion = "us-west-2"
 const bucketNamePrefix = "object-benchmark"
 
-// the hostname or EC2 instance id
+// the hostname where this benchmark is executed from
 var hostname = getHostname()
 
-// the EC2 instance region if available
-var region = getRegion()
+// the region if available.
+var region string
 
-// the endpoint URL if applicable
+// the endpoint URL or path if applicable
 var endpoint string
-
-// the EC2 instance type if available
-var instanceType = getInstanceType()
 
 // the script will automatically create a bucket to use for the test, and it tries to get a unique bucket name
 // by generating a sha hash of the hostname
@@ -146,7 +140,7 @@ func parseFlags() {
 	threadsMaxArg := flag.Int("threads-max", 16, "The maximum number of threads to use when fetching objects.")
 	payloadsMinArg := flag.Int("payloads-min", 1, "The minimum object size to test, with 1 = 1 KB, and every increment is a double of the previous value.")
 	payloadsMaxArg := flag.Int("payloads-max", 10, "The maximum object size to test, with 1 = 1 KB, and every increment is a double of the previous value.")
-	samplesArg := flag.Int("samples", 1000, "The number of samples to collect for each test of a single object size and thread count.")
+	samplesArg := flag.Int("samples", 50, "The number of samples to collect for each test of a single object size and thread count. Default is 50.")
 	bucketNameArg := flag.String("bucket-name", "", "Cleans up all artifacts used by the benchmarks.")
 	regionArg := flag.String("region", "", "Sets the AWS region to use for the S3 bucket. Only applies if the bucket doesn't already exist.")
 	endpointArg := flag.String("endpoint", "", "Sets the endpoint to use. Might be any URI.")
@@ -379,7 +373,7 @@ func runBenchmark() {
 		_ = w.WriteAll(csvRecords)
 
 		// create the object key based on the prefix argument and instance type
-		key := "results/" + csvResults + "-" + instanceType
+		key := "results/" + csvResults
 
 		// do the PutObject request
 		err := client.PutObject(bucketName, key, bytes.NewReader(b.Bytes()))
@@ -389,14 +383,11 @@ func runBenchmark() {
 			panic("Failed to put object: " + err.Error())
 		}
 
-		fmt.Printf("CSV results uploaded to \033[1;33mthe store://%s/%s\033[0m\n", bucketName, key)
+		fmt.Printf("CSV results uploaded to \033[1;33m %s/%s/%s\033[0m\n", endpoint, bucketName, key)
 	}
 }
 
 func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][]string) [][]string {
-	// this overrides the sample count on small hosts that can get overwhelmed by a large throughput
-	samples := getTargetSampleCount(threadCount, samples)
-
 	// a channel to submit the test tasks
 	testTasks := make(chan int, threadCount)
 
@@ -496,7 +487,7 @@ func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][
 	// add the results to the csv array
 	csvRecords = append(csvRecords, []string{
 		fmt.Sprintf("%s", hostname),
-		fmt.Sprintf("%s", instanceType),
+		fmt.Sprintf("%s", endpoint),
 		fmt.Sprintf("%d", payloadSize),
 		fmt.Sprintf("%d", benchmarkRecord.threads),
 		fmt.Sprintf("%.3f", rate),
@@ -589,19 +580,12 @@ func measureWritePerformanceForSingleObject(key string, payloadSize uint64) (fir
 
 // prints the table header for the test results
 func printHeader(objectSize uint64) {
-	// instance type string used to render results to stdout
-	instanceTypeString := ""
-
-	if instanceType != "" {
-		instanceTypeString = " (" + instanceType + ")"
-	}
-
 	// print the table header
-	testType := "Download"
+	testTitle := "Read performance from"
 	if operationToTest == "write" {
-		testType = "Upload"
+		testTitle = "Write performance to"
 	}
-	fmt.Printf("%s performance with \033[1;33m%-s\033[0m objects%s\n", testType, byteFormat(float64(objectSize)), instanceTypeString)
+	fmt.Printf("%s %s with \033[1;33m%-s\033[0m objects\n", testTitle, endpoint, byteFormat(float64(objectSize)))
 	fmt.Println("                           +-------------------------------------------------------------------------------------------------+")
 	fmt.Println("                           |            Time to First Byte (ms)             |            Time to Last Byte (ms)              |")
 	fmt.Println("+---------+----------------+------------------------------------------------+------------------------------------------------+")
@@ -644,7 +628,7 @@ func generateRandomString(seed int) string {
 func cleanup() {
 	fmt.Print("\n--- \033[1;32mCLEANUP\033[0m ------------------------------------------------------------------------------------------------------------------\n\n")
 
-	fmt.Printf("Deleting any objects uploaded from %s\n", hostname)
+	fmt.Printf("Deleting any objects uploaded from %s to %s\n", hostname, endpoint)
 
 	// create a progress bar
 	bar := progressbar.NewOptions(payloadsMax*threadsMax-1, progressbar.OptionSetRenderBlankState(true))
@@ -689,13 +673,8 @@ func deleteSingleObject(runNumber string, threadIdx int, payloadSize uint64) {
 	}
 }
 
-// gets the hostname or the EC2 instance ID
+// gets the name of the host that executes the test.
 func getHostname() string {
-	instanceId := getInstanceId()
-	if instanceId != "" {
-		return instanceId
-	}
-
 	hostname, err := os.Hostname()
 	if err != nil {
 		panic(err)
@@ -711,62 +690,6 @@ func byteFormat(bytes float64) string {
 	return fmt.Sprintf("%.f KB", bytes/1024)
 }
 
-// gets the EC2 region from the instance metadata
-func getRegion() string {
-	httpClient := &http.Client{
-		Timeout: time.Second,
-	}
-
-	link := "http://169.254.169.254/latest/meta-data/placement/availability-zone"
-	response, err := httpClient.Get(link)
-	if err != nil {
-		return defaultRegion
-	}
-
-	content, _ := ioutil.ReadAll(response.Body)
-	_ = response.Body.Close()
-
-	az := string(content)
-
-	return az[:len(az)-1]
-}
-
-// gets the EC2 instance type from the instance metadata
-func getInstanceType() string {
-	httpClient := &http.Client{
-		Timeout: time.Second,
-	}
-
-	link := "http://169.254.169.254/latest/meta-data/instance-type"
-	response, err := httpClient.Get(link)
-	if err != nil {
-		return ""
-	}
-
-	content, _ := ioutil.ReadAll(response.Body)
-	_ = response.Body.Close()
-
-	return string(content)
-}
-
-// gets the EC2 instance ID from the instance metadata
-func getInstanceId() string {
-	httpClient := &http.Client{
-		Timeout: time.Second,
-	}
-
-	link := "http://169.254.169.254/latest/meta-data/instance-id"
-	response, err := httpClient.Get(link)
-	if err != nil {
-		return ""
-	}
-
-	content, _ := ioutil.ReadAll(response.Body)
-	_ = response.Body.Close()
-
-	return string(content)
-}
-
 // returns an object size iterator, starting from 1 KB and double in size by each iteration
 func payloadSizeGenerator() func() uint64 {
 	nextPayloadSize := uint64(1024)
@@ -776,26 +699,6 @@ func payloadSizeGenerator() func() uint64 {
 		nextPayloadSize *= 2
 		return thisPayloadSize
 	}
-}
-
-// adjust the sample count for small instances and for low thread counts (so that the test doesn't take forever)
-func getTargetSampleCount(threads int, tasks int) int {
-	if instanceType == "" {
-		return minimumOf(50, tasks)
-	}
-	if !strings.Contains(instanceType, "xlarge") && !strings.Contains(instanceType, "metal") {
-		return minimumOf(50, tasks)
-	}
-	if threads <= 4 {
-		return minimumOf(100, tasks)
-	}
-	if threads <= 8 {
-		return minimumOf(250, tasks)
-	}
-	if threads <= 16 {
-		return minimumOf(500, tasks)
-	}
-	return tasks
 }
 
 // go doesn't seem to have a min function in the std lib!
