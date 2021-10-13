@@ -708,14 +708,6 @@ func payloadSizeGenerator() func() uint64 {
 	}
 }
 
-// go doesn't seem to have a min function in the std lib!
-func minimumOf(x, y int) int {
-	if x < y {
-		return x
-	}
-	return y
-}
-
 // comparator to sort by first byte latency
 type ByFirstByte []latency
 
