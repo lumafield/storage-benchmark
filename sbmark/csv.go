@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-func CsvReader(report Report) *bytes.Reader {
+func ToCsv(report Report) *bytes.Buffer {
 	// array of csv records used to upload the results
 	var csvRecords [][]string
 
@@ -41,5 +41,5 @@ func CsvReader(report Report) *bytes.Reader {
 	w := csv.NewWriter(b)
 	_ = w.WriteAll(csvRecords)
 
-	return bytes.NewReader(b.Bytes())
+	return b
 }

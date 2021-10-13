@@ -61,7 +61,7 @@ var throttlingMode bool
 var cleanupOnly bool
 
 // if not empty, the results of the test get uploaded using this key prefix
-var csvResults string
+var csvFileName string
 
 // the client to operate on objects
 var client sbmark.BenchmarkAPI
@@ -127,7 +127,7 @@ func parseFlags() {
 	fullArg := flag.Bool("full", false, "Runs the full exhaustive test, and overrides the threads and payload arguments.")
 	throttlingModeArg := flag.Bool("throttling-mode", false, "Runs a continuous test to find out when EC2 network throttling kicks in.")
 	cleanupArg := flag.Bool("cleanup", false, "Cleans all the objects uploaded for this test.")
-	csvResultsArg := flag.String("upload-csv", "", "Uploads the test results as a CSV file.")
+	csvArg := flag.String("csv", "", "Saves the results as .csv file.")
 	operationArg := flag.String("operation", "read", "Specify if you want to measure 'read' or 'write'. Default is 'read'")
 	createBucketArg := flag.Bool("create-bucket", false, "create new bucket(default false)")
 	logPathArg := flag.String("log-path", "", "Specify the path of the log file. Default is 'currentDir'")
@@ -154,7 +154,7 @@ func parseFlags() {
 	threadsMax = *threadsMaxArg
 	samples = maxOf(*samplesArg, samplesMin)
 	cleanupOnly = *cleanupArg
-	csvResults = *csvResultsArg
+	csvFileName = *csvArg
 	createBucket = *createBucketArg
 
 	if *logPathArg == "" {
@@ -360,21 +360,13 @@ func runBenchmark() {
 		fmt.Print("+---------+----------------+------------------------------------------------+------------------------------------------------+\n\n")
 	}
 
-	// if the csv option is true, upload the csv results
-	if csvResults != "" {
-
-		// create the object key based on the prefix argument and instance type
-		key := "results/" + csvResults
-
-		// do the PutObject request
-		err := client.PutObject(bucketName, key, sbmark.CsvReader(report))
-
-		// if the request fails, exit
+	// if the csv option is set, save the report as .csv
+	if csvFileName != "" {
+		err := os.WriteFile(csvFileName, sbmark.ToCsv(report).Bytes(), 0644)
 		if err != nil {
-			panic("Failed to put object: " + err.Error())
+			panic("Failed to create .csv output: " + err.Error())
 		}
-
-		fmt.Printf("CSV results uploaded to %s/%s/%s\n", endpoint, bucketName, key)
+		fmt.Printf("CSV results were written to %s\n", csvFileName)
 	}
 }
 
