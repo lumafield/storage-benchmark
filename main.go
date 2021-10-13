@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -24,29 +25,6 @@ import (
 type latency struct {
 	FirstByte time.Duration
 	LastByte  time.Duration
-}
-
-// summary statistics used to summarize first byte and last byte latencies
-type stat int
-
-const (
-	min stat = iota + 1
-	max
-	avg
-	p25
-	p50
-	p75
-	p90
-	p99
-)
-
-// a benchmark record for one object size and thread count
-type benchmark struct {
-	objectSize uint64
-	threads    int
-	firstByte  map[stat]float64
-	lastByte   map[stat]float64
-	dataPoints []latency
 }
 
 // default settings
@@ -102,6 +80,9 @@ var logger *log2.Logger
 
 // flag for a load test
 var infiniteMode bool
+
+// The final report of this benchmark run
+var report sbmark.Report
 
 // program entry point
 func main() {
@@ -329,8 +310,15 @@ func uploadObjects() {
 func runBenchmark() {
 	fmt.Print("\n--- BENCHMARK ----------------------------------------------------------------------------------------------------------------\n\n")
 
-	// array of csv records used to upload the results when the test is finished
-	var csvRecords [][]string
+	// Init the final report
+	report = sbmark.Report{
+		Endpoint:    endpoint,
+		Path:        bucketName,
+		ClientEnv:   fmt.Sprintf("Application: %s, Host: %s, OS: %s", filepath.Base(os.Args[0]), getHostname(), runtime.GOOS),
+		ServerEnv:   endpoint,
+		DateTimeUTC: time.Now().UTC().Local().String(),
+		Records:     []sbmark.Record{},
+	}
 
 	// an object size iterator that starts from 1 KB and doubles the size on every iteration
 	generatePayload := payloadSizeGenerator()
@@ -355,7 +343,7 @@ func runBenchmark() {
 				// must change run id to prevent collisions
 				for true {
 					writeRunNumber++
-					csvRecords = execTest(t, payload, writeRunNumber, csvRecords)
+					execTest(t, payload, writeRunNumber)
 					if !infiniteMode {
 						break
 					}
@@ -363,7 +351,7 @@ func runBenchmark() {
 			} else {
 				// if throttling mode or infinite mode, loop forever
 				for n := 1; true; n++ {
-					csvRecords = execTest(t, payload, n, csvRecords)
+					execTest(t, payload, n)
 					if !throttlingMode && !infiniteMode {
 						break
 					}
@@ -375,6 +363,37 @@ func runBenchmark() {
 
 	// if the csv option is true, upload the csv results
 	if csvResults != "" {
+
+		// array of csv records used to upload the results
+		var csvRecords [][]string
+
+		for _, record := range report.Records {
+			// add the results to the csv array
+			csvRecords = append(csvRecords, []string{
+				report.ClientEnv,
+				report.ServerEnv,
+				fmt.Sprintf("%d", record.ObjectSizeBytes),
+				fmt.Sprintf("%d", record.Threads),
+				fmt.Sprintf("%.3f", record.ThroughputMBps()),
+				fmt.Sprintf("%.1f", record.TimeToFirstByte["avg"]),
+				fmt.Sprintf("%.1f", record.TimeToFirstByte["min"]),
+				fmt.Sprintf("%.1f", record.TimeToFirstByte["p25"]),
+				fmt.Sprintf("%.1f", record.TimeToFirstByte["p50"]),
+				fmt.Sprintf("%.1f", record.TimeToFirstByte["p75"]),
+				fmt.Sprintf("%.1f", record.TimeToFirstByte["p90"]),
+				fmt.Sprintf("%.1f", record.TimeToFirstByte["p99"]),
+				fmt.Sprintf("%.1f", record.TimeToFirstByte["max"]),
+				fmt.Sprintf("%.2f", record.TimeToLastByte["avg"]),
+				fmt.Sprintf("%.2f", record.TimeToLastByte["min"]),
+				fmt.Sprintf("%.1f", record.TimeToLastByte["p25"]),
+				fmt.Sprintf("%.1f", record.TimeToLastByte["p50"]),
+				fmt.Sprintf("%.1f", record.TimeToLastByte["p75"]),
+				fmt.Sprintf("%.1f", record.TimeToLastByte["p90"]),
+				fmt.Sprintf("%.1f", record.TimeToLastByte["p99"]),
+				fmt.Sprintf("%.1f", record.TimeToLastByte["max"]),
+			})
+		}
+
 		b := &bytes.Buffer{}
 		w := csv.NewWriter(b)
 		_ = w.WriteAll(csvRecords)
@@ -394,7 +413,7 @@ func runBenchmark() {
 	}
 }
 
-func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][]string) [][]string {
+func execTest(threadCount int, payloadSize uint64, runNumber int) {
 	// a channel to submit the test tasks
 	testTasks := make(chan int, threadCount)
 
@@ -422,6 +441,18 @@ func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][
 		}(w, testTasks, results)
 	}
 
+	// construct a new benchmark record
+	dataPoints := []latency{}
+	sumFirstByte := int64(0)
+	sumLastByte := int64(0)
+
+	record := sbmark.Record{
+		Operation:       operationToTest,
+		Threads:         threadCount,
+		TimeToFirstByte: make(map[string]float64),
+		TimeToLastByte:  make(map[string]float64),
+	}
+
 	// start the timer for this benchmark
 	benchmarkTimer := time.Now()
 
@@ -433,90 +464,55 @@ func execTest(threadCount int, payloadSize uint64, runNumber int, csvRecords [][
 	// close the channel
 	close(testTasks)
 
-	// construct a new benchmark record
-	benchmarkRecord := benchmark{
-		firstByte: make(map[stat]float64),
-		lastByte:  make(map[stat]float64),
-	}
-	sumFirstByte := int64(0)
-	sumLastByte := int64(0)
-	benchmarkRecord.threads = threadCount
-
 	// wait for all the results to come and collect the individual datapoints
 	for s := 1; s <= samples; s++ {
 		timing := <-results
-		benchmarkRecord.dataPoints = append(benchmarkRecord.dataPoints, timing)
+		dataPoints = append(dataPoints, timing)
 		sumFirstByte += timing.FirstByte.Nanoseconds()
 		sumLastByte += timing.LastByte.Nanoseconds()
-		benchmarkRecord.objectSize += payloadSize
+		record.ObjectSizeBytes += payloadSize
 	}
 
 	// stop the timer for this benchmark
 	totalTime := time.Now().Sub(benchmarkTimer)
+	record.DurationSeconds = totalTime.Seconds()
 
 	// calculate the summary statistics for the first byte latencies
-	sort.Sort(ByFirstByte(benchmarkRecord.dataPoints))
-	benchmarkRecord.firstByte[avg] = (float64(sumFirstByte) / float64(samples)) / 1000000
-	benchmarkRecord.firstByte[min] = float64(benchmarkRecord.dataPoints[0].FirstByte.Nanoseconds()) / 1000000
-	benchmarkRecord.firstByte[max] = float64(benchmarkRecord.dataPoints[len(benchmarkRecord.dataPoints)-1].FirstByte.Nanoseconds()) / 1000000
-	benchmarkRecord.firstByte[p25] = float64(benchmarkRecord.dataPoints[int(float64(samples)*float64(0.25))-1].FirstByte.Nanoseconds()) / 1000000
-	benchmarkRecord.firstByte[p50] = float64(benchmarkRecord.dataPoints[int(float64(samples)*float64(0.5))-1].FirstByte.Nanoseconds()) / 1000000
-	benchmarkRecord.firstByte[p75] = float64(benchmarkRecord.dataPoints[int(float64(samples)*float64(0.75))-1].FirstByte.Nanoseconds()) / 1000000
-	benchmarkRecord.firstByte[p90] = float64(benchmarkRecord.dataPoints[int(float64(samples)*float64(0.90))-1].FirstByte.Nanoseconds()) / 1000000
-	benchmarkRecord.firstByte[p99] = float64(benchmarkRecord.dataPoints[int(float64(samples)*float64(0.99))-1].FirstByte.Nanoseconds()) / 1000000
+	sort.Sort(ByFirstByte(dataPoints))
+	record.TimeToFirstByte["avg"] = (float64(sumFirstByte) / float64(samples)) / 1000000
+	record.TimeToFirstByte["min"] = float64(dataPoints[0].FirstByte.Nanoseconds()) / 1000000
+	record.TimeToFirstByte["max"] = float64(dataPoints[len(dataPoints)-1].FirstByte.Nanoseconds()) / 1000000
+	record.TimeToFirstByte["p25"] = float64(dataPoints[int(float64(samples)*float64(0.25))-1].FirstByte.Nanoseconds()) / 1000000
+	record.TimeToFirstByte["p50"] = float64(dataPoints[int(float64(samples)*float64(0.5))-1].FirstByte.Nanoseconds()) / 1000000
+	record.TimeToFirstByte["p75"] = float64(dataPoints[int(float64(samples)*float64(0.75))-1].FirstByte.Nanoseconds()) / 1000000
+	record.TimeToFirstByte["p90"] = float64(dataPoints[int(float64(samples)*float64(0.90))-1].FirstByte.Nanoseconds()) / 1000000
+	record.TimeToFirstByte["p99"] = float64(dataPoints[int(float64(samples)*float64(0.99))-1].FirstByte.Nanoseconds()) / 1000000
 
 	// calculate the summary statistics for the last byte latencies
-	sort.Sort(ByLastByte(benchmarkRecord.dataPoints))
-	benchmarkRecord.lastByte[avg] = (float64(sumLastByte) / float64(samples)) / 1000000
-	benchmarkRecord.lastByte[min] = float64(benchmarkRecord.dataPoints[0].LastByte.Nanoseconds()) / 1000000
-	benchmarkRecord.lastByte[max] = float64(benchmarkRecord.dataPoints[len(benchmarkRecord.dataPoints)-1].LastByte.Nanoseconds()) / 1000000
-	benchmarkRecord.lastByte[p25] = float64(benchmarkRecord.dataPoints[int(float64(samples)*float64(0.25))-1].LastByte.Nanoseconds()) / 1000000
-	benchmarkRecord.lastByte[p50] = float64(benchmarkRecord.dataPoints[int(float64(samples)*float64(0.5))-1].LastByte.Nanoseconds()) / 1000000
-	benchmarkRecord.lastByte[p75] = float64(benchmarkRecord.dataPoints[int(float64(samples)*float64(0.75))-1].LastByte.Nanoseconds()) / 1000000
-	benchmarkRecord.lastByte[p90] = float64(benchmarkRecord.dataPoints[int(float64(samples)*float64(0.90))-1].LastByte.Nanoseconds()) / 1000000
-	benchmarkRecord.lastByte[p99] = float64(benchmarkRecord.dataPoints[int(float64(samples)*float64(0.99))-1].LastByte.Nanoseconds()) / 1000000
-
-	// calculate the throughput rate
-	rate := (float64(benchmarkRecord.objectSize)) / (totalTime.Seconds()) / 1024 / 1024
+	sort.Sort(ByLastByte(dataPoints))
+	record.TimeToLastByte["avg"] = (float64(sumLastByte) / float64(samples)) / 1000000
+	record.TimeToLastByte["min"] = float64(dataPoints[0].LastByte.Nanoseconds()) / 1000000
+	record.TimeToLastByte["max"] = float64(dataPoints[len(dataPoints)-1].LastByte.Nanoseconds()) / 1000000
+	record.TimeToLastByte["p25"] = float64(dataPoints[int(float64(samples)*float64(0.25))-1].LastByte.Nanoseconds()) / 1000000
+	record.TimeToLastByte["p50"] = float64(dataPoints[int(float64(samples)*float64(0.5))-1].LastByte.Nanoseconds()) / 1000000
+	record.TimeToLastByte["p75"] = float64(dataPoints[int(float64(samples)*float64(0.75))-1].LastByte.Nanoseconds()) / 1000000
+	record.TimeToLastByte["p90"] = float64(dataPoints[int(float64(samples)*float64(0.90))-1].LastByte.Nanoseconds()) / 1000000
+	record.TimeToLastByte["p99"] = float64(dataPoints[int(float64(samples)*float64(0.99))-1].LastByte.Nanoseconds()) / 1000000
 
 	// determine what to put in the first column of the results
-	c := benchmarkRecord.threads
+	c := record.Threads
 	if throttlingMode {
 		c = runNumber
 	}
 
 	// print the results to stdout
 	fmt.Printf("| %7d | %9.3f MB/s |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |\n",
-		c, rate,
-		benchmarkRecord.firstByte[avg], benchmarkRecord.firstByte[min], benchmarkRecord.firstByte[p25], benchmarkRecord.firstByte[p50], benchmarkRecord.firstByte[p75], benchmarkRecord.firstByte[p90], benchmarkRecord.firstByte[p99], benchmarkRecord.firstByte[max],
-		benchmarkRecord.lastByte[avg], benchmarkRecord.lastByte[min], benchmarkRecord.lastByte[p25], benchmarkRecord.lastByte[p50], benchmarkRecord.lastByte[p75], benchmarkRecord.lastByte[p90], benchmarkRecord.lastByte[p99], benchmarkRecord.lastByte[max])
+		c, record.ThroughputMBps(),
+		record.TimeToFirstByte["avg"], record.TimeToFirstByte["min"], record.TimeToFirstByte["p25"], record.TimeToFirstByte["p50"], record.TimeToFirstByte["p75"], record.TimeToFirstByte["p90"], record.TimeToFirstByte["p99"], record.TimeToFirstByte["max"],
+		record.TimeToLastByte["avg"], record.TimeToLastByte["min"], record.TimeToLastByte["p25"], record.TimeToLastByte["p50"], record.TimeToLastByte["p75"], record.TimeToLastByte["p90"], record.TimeToLastByte["p99"], record.TimeToLastByte["max"])
 
-	// add the results to the csv array
-	csvRecords = append(csvRecords, []string{
-		fmt.Sprintf("%s", hostname),
-		fmt.Sprintf("%s", endpoint),
-		fmt.Sprintf("%d", payloadSize),
-		fmt.Sprintf("%d", benchmarkRecord.threads),
-		fmt.Sprintf("%.3f", rate),
-		fmt.Sprintf("%.1f", benchmarkRecord.firstByte[avg]),
-		fmt.Sprintf("%.1f", benchmarkRecord.firstByte[min]),
-		fmt.Sprintf("%.1f", benchmarkRecord.firstByte[p25]),
-		fmt.Sprintf("%.1f", benchmarkRecord.firstByte[p50]),
-		fmt.Sprintf("%.1f", benchmarkRecord.firstByte[p75]),
-		fmt.Sprintf("%.1f", benchmarkRecord.firstByte[p90]),
-		fmt.Sprintf("%.1f", benchmarkRecord.firstByte[p99]),
-		fmt.Sprintf("%.1f", benchmarkRecord.firstByte[max]),
-		fmt.Sprintf("%.2f", benchmarkRecord.lastByte[avg]),
-		fmt.Sprintf("%.2f", benchmarkRecord.lastByte[min]),
-		fmt.Sprintf("%.1f", benchmarkRecord.lastByte[p25]),
-		fmt.Sprintf("%.1f", benchmarkRecord.lastByte[p50]),
-		fmt.Sprintf("%.1f", benchmarkRecord.lastByte[p75]),
-		fmt.Sprintf("%.1f", benchmarkRecord.lastByte[p90]),
-		fmt.Sprintf("%.1f", benchmarkRecord.lastByte[p99]),
-		fmt.Sprintf("%.1f", benchmarkRecord.lastByte[max]),
-	})
-
-	return csvRecords
+	// append the record to the report
+	report.Records = append(report.Records, record)
 }
 
 func measureReadPerformanceForSingleObject(key string, payloadSize uint64) (firstByte time.Duration, lastByte time.Duration) {
