@@ -411,6 +411,7 @@ func execTest(threadCount int, payloadSize uint64, runNumber int) {
 	for w := 1; w <= threadCount; w++ {
 		go func(o int, tasks <-chan int, results chan<- latency) {
 			for range tasks {
+				setupClient() // reinit the connection so that we can measure DNS lookup, TCP handshake and SSL handshake. This will lead to higher latency numbers...
 				var firstByte, lastByte time.Duration
 				if operationToTest == "write" {
 					// generate an object key from the sha hash of the current run id, thread index, and object size
@@ -421,6 +422,9 @@ func execTest(threadCount int, payloadSize uint64, runNumber int) {
 					key := generateObjectKey(hostname, o, payloadSize)
 					firstByte, lastByte = measureReadPerformanceForSingleObject(key, payloadSize)
 				}
+
+				fmt.Printf("TTFB: %d ms\n", firstByte/1000000)
+				fmt.Printf("TTLB: %d ms\n", lastByte/1000000)
 
 				// add the latency result to the results channel
 				results <- latency{FirstByte: firstByte, LastByte: lastByte}
@@ -507,6 +511,7 @@ func measureReadPerformanceForSingleObject(key string, payloadSize uint64) (firs
 	// start the timer to measure the first byte and last byte latencies
 	latencyTimer := time.Now()
 	// do the GetObject request
+
 	dataStream, err := client.GetObject(bucketName, key)
 	// if a request fails, exit
 	if err != nil {

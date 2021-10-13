@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -11,6 +12,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+
+	"github.com/tcnksm/go-httpstat"
 )
 
 type S3ObjectClient struct {
@@ -90,21 +93,36 @@ func (c *S3ObjectClient) HeadObject(bucketName string, key string) error {
 }
 
 func (c *S3ObjectClient) PutObject(bucketName string, key string, reader *bytes.Reader) error {
+	var result httpstat.Result
+	ctx := httpstat.WithHTTPStat(context.TODO(), &result)
 	s3Client := c.delegate
-	_, err := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
+	_, err := s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 		Body:   reader,
 	})
+
+	// Show the results
+	fmt.Printf("DNS lookup: %d ms\n", int(result.DNSLookup/time.Millisecond))
+	fmt.Printf("TCP connection: %d ms\n", int(result.TCPConnection/time.Millisecond))
+	fmt.Printf("TLS handshake: %d ms\n", int(result.TLSHandshake/time.Millisecond))
+	fmt.Printf("Server processing: %d ms\n", int(result.ServerProcessing/time.Millisecond))
 	return err
 }
 
 func (c *S3ObjectClient) GetObject(bucketName string, key string) (io.ReadCloser, error) {
+	var result httpstat.Result
+	ctx := httpstat.WithHTTPStat(context.TODO(), &result)
 	s3Client := c.delegate
-	resp, err := s3Client.GetObject(context.TODO(), &s3.GetObjectInput{
+	resp, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
+	// Show the results
+	fmt.Printf("DNS lookup: %d ms\n", int(result.DNSLookup/time.Millisecond))
+	fmt.Printf("TCP connection: %d ms\n", int(result.TCPConnection/time.Millisecond))
+	fmt.Printf("TLS handshake: %d ms\n", int(result.TLSHandshake/time.Millisecond))
+	fmt.Printf("Server processing: %d ms\n", int(result.ServerProcessing/time.Millisecond))
 	return resp.Body, err
 }
 
