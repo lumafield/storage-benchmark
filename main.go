@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"crypto/sha1"
-	"encoding/csv"
 	"flag"
 	"fmt"
 	"io"
@@ -364,45 +363,11 @@ func runBenchmark() {
 	// if the csv option is true, upload the csv results
 	if csvResults != "" {
 
-		// array of csv records used to upload the results
-		var csvRecords [][]string
-
-		for _, record := range report.Records {
-			// add the results to the csv array
-			csvRecords = append(csvRecords, []string{
-				report.ClientEnv,
-				report.ServerEnv,
-				fmt.Sprintf("%d", record.ObjectSizeBytes),
-				fmt.Sprintf("%d", record.Threads),
-				fmt.Sprintf("%.3f", record.ThroughputMBps()),
-				fmt.Sprintf("%.1f", record.TimeToFirstByte["avg"]),
-				fmt.Sprintf("%.1f", record.TimeToFirstByte["min"]),
-				fmt.Sprintf("%.1f", record.TimeToFirstByte["p25"]),
-				fmt.Sprintf("%.1f", record.TimeToFirstByte["p50"]),
-				fmt.Sprintf("%.1f", record.TimeToFirstByte["p75"]),
-				fmt.Sprintf("%.1f", record.TimeToFirstByte["p90"]),
-				fmt.Sprintf("%.1f", record.TimeToFirstByte["p99"]),
-				fmt.Sprintf("%.1f", record.TimeToFirstByte["max"]),
-				fmt.Sprintf("%.2f", record.TimeToLastByte["avg"]),
-				fmt.Sprintf("%.2f", record.TimeToLastByte["min"]),
-				fmt.Sprintf("%.1f", record.TimeToLastByte["p25"]),
-				fmt.Sprintf("%.1f", record.TimeToLastByte["p50"]),
-				fmt.Sprintf("%.1f", record.TimeToLastByte["p75"]),
-				fmt.Sprintf("%.1f", record.TimeToLastByte["p90"]),
-				fmt.Sprintf("%.1f", record.TimeToLastByte["p99"]),
-				fmt.Sprintf("%.1f", record.TimeToLastByte["max"]),
-			})
-		}
-
-		b := &bytes.Buffer{}
-		w := csv.NewWriter(b)
-		_ = w.WriteAll(csvRecords)
-
 		// create the object key based on the prefix argument and instance type
 		key := "results/" + csvResults
 
 		// do the PutObject request
-		err := client.PutObject(bucketName, key, bytes.NewReader(b.Bytes()))
+		err := client.PutObject(bucketName, key, sbmark.CsvReader(report))
 
 		// if the request fails, exit
 		if err != nil {
@@ -447,6 +412,7 @@ func execTest(threadCount int, payloadSize uint64, runNumber int) {
 	sumLastByte := int64(0)
 
 	record := sbmark.Record{
+		ObjectSizeBytes: 0,
 		Operation:       operationToTest,
 		Threads:         threadCount,
 		TimeToFirstByte: make(map[string]float64),
