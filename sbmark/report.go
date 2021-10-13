@@ -3,9 +3,10 @@ package sbmark
 type Report struct {
 	Endpoint    string   `json:"endpoint"`
 	Path        string   `json:"path"`
-	ClientEnv   string   `json:"client_env"`   // Description of the environment from which the benchmark has been executed.
-	ServerEnv   string   `json:"server_env"`   // Description of the environment of the test target.
-	DateTimeUTC string   `json:"datetime_utc"` //
+	ClientEnv   string   `json:"client_env"` // Description of the environment from which the benchmark has been executed.
+	ServerEnv   string   `json:"server_env"` // Description of the environment of the test target.
+	DateTimeUTC string   `json:"datetime_utc"`
+	Samples     int      `json:"samples"` // Number of operations executed per record
 	Records     []Record `json:"records"`
 }
 
@@ -14,8 +15,8 @@ type Record struct {
 	ObjectSizeBytes uint64             `json:"object_size_bytes"`
 	DurationSeconds float64            `json:"duration_secs"`
 	Threads         int                `json:"threads"`
-	TimeToFirstByte map[string]float64 `json:"ttfb_latency"`
-	TimeToLastByte  map[string]float64 `json:"ttlb_latency"`
+	TimeToFirstByte map[string]float64 `json:"ttfb_latency_ms"`
+	TimeToLastByte  map[string]float64 `json:"ttlb_latency_ms"`
 }
 
 func (r *Record) ThroughputMBps() float64 {

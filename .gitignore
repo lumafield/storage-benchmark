@@ -47,7 +47,7 @@ vendor/
 
 # Other
 *.log
-launch.json
+*.json
 *.csv
 
 # Allow

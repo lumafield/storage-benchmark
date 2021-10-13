@@ -60,8 +60,11 @@ var throttlingMode bool
 // flag to cleanup the bucket and exit the program
 var cleanupOnly bool
 
-// if not empty, the results of the test get uploaded using this key prefix
+// if not empty, the results of the test are saved as .csv file
 var csvFileName string
+
+// if not empty, the results of the test are saved as .json file
+var jsonFileName string
 
 // the client to operate on objects
 var client sbmark.BenchmarkAPI
@@ -128,6 +131,7 @@ func parseFlags() {
 	throttlingModeArg := flag.Bool("throttling-mode", false, "Runs a continuous test to find out when EC2 network throttling kicks in.")
 	cleanupArg := flag.Bool("cleanup", false, "Cleans all the objects uploaded for this test.")
 	csvArg := flag.String("csv", "", "Saves the results as .csv file.")
+	jsonArg := flag.String("json", "", "Saves the results as .json file.")
 	operationArg := flag.String("operation", "read", "Specify if you want to measure 'read' or 'write'. Default is 'read'")
 	createBucketArg := flag.Bool("create-bucket", false, "create new bucket(default false)")
 	logPathArg := flag.String("log-path", "", "Specify the path of the log file. Default is 'currentDir'")
@@ -155,6 +159,7 @@ func parseFlags() {
 	samples = maxOf(*samplesArg, samplesMin)
 	cleanupOnly = *cleanupArg
 	csvFileName = *csvArg
+	jsonFileName = *jsonArg
 	createBucket = *createBucketArg
 
 	if *logPathArg == "" {
@@ -315,7 +320,8 @@ func runBenchmark() {
 		Path:        bucketName,
 		ClientEnv:   fmt.Sprintf("Application: %s, Host: %s, OS: %s", filepath.Base(os.Args[0]), getHostname(), runtime.GOOS),
 		ServerEnv:   endpoint,
-		DateTimeUTC: time.Now().UTC().Local().String(),
+		DateTimeUTC: time.Now().UTC().String(),
+		Samples:     samples,
 		Records:     []sbmark.Record{},
 	}
 
@@ -362,11 +368,28 @@ func runBenchmark() {
 
 	// if the csv option is set, save the report as .csv
 	if csvFileName != "" {
-		err := os.WriteFile(csvFileName, sbmark.ToCsv(report).Bytes(), 0644)
+		csvReport, err := sbmark.ToCsv(report)
+		if err != nil {
+			panic("Failed to create .csv output: " + err.Error())
+		}
+		err = os.WriteFile(csvFileName, csvReport, 0644)
 		if err != nil {
 			panic("Failed to create .csv output: " + err.Error())
 		}
 		fmt.Printf("CSV results were written to %s\n", csvFileName)
+	}
+
+	// if the json option is set, save the report as .json
+	if jsonFileName != "" {
+		jsonReport, err := sbmark.ToJson(report)
+		if err != nil {
+			panic("Failed to create .json output: " + err.Error())
+		}
+		err = os.WriteFile(jsonFileName, jsonReport, 0644)
+		if err != nil {
+			panic("Failed to create .json output: " + err.Error())
+		}
+		fmt.Printf("JSON results were written to %s\n", jsonFileName)
 	}
 }
 

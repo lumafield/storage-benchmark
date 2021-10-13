@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-func ToCsv(report Report) *bytes.Buffer {
+func ToCsv(report Report) ([]byte, error) {
 	// array of csv records used to upload the results
 	var csvRecords [][]string
 
@@ -41,5 +41,5 @@ func ToCsv(report Report) *bytes.Buffer {
 	w := csv.NewWriter(b)
 	_ = w.WriteAll(csvRecords)
 
-	return b
+	return b.Bytes(), nil
 }
