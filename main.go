@@ -128,7 +128,7 @@ func parseFlags() {
 	payloadsMinArg := flag.Int("payloads-min", 1, "The minimum object size to test, with 1 = 1 KB, and every increment is a double of the previous value.")
 	payloadsMaxArg := flag.Int("payloads-max", 10, "The maximum object size to test, with 1 = 1 KB, and every increment is a double of the previous value.")
 	samplesArg := flag.Int("samples", 50, "The number of samples to collect for each test of a single object size and thread count. Default is 50. Minimum value is 4.")
-	bucketNameArg := flag.String("bucket-name", "", "Cleans up all artifacts used by the benchmarks.")
+	bucketNameArg := flag.String("bucket-name", "", "The target bucket or folder to be used.")
 	regionArg := flag.String("region", "", "Sets the AWS region to use for the S3 bucket. Only applies if the bucket doesn't already exist.")
 	endpointArg := flag.String("endpoint", "", "Sets the endpoint to use. Might be any URI.")
 	fullArg := flag.Bool("full", false, "Runs the full exhaustive test, and overrides the threads and payload arguments.")
