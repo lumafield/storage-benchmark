@@ -20,12 +20,6 @@ import (
 	"github.com/schollz/progressbar/v2"
 )
 
-// represents the duration from making an operation to getting the first byte and last byte
-type latency struct {
-	FirstByte time.Duration
-	LastByte  time.Duration
-}
-
 // default settings
 const bucketNamePrefix = "storage-benchmark"
 const samplesMin = 4 // to calculate the 0.25 percentile we need at least 4 samples of each run
@@ -248,7 +242,7 @@ func setupClient() {
 func createBenchmarkBucket() {
 	fmt.Print("\n--- SETUP --------------------------------------------------------------------------------------------------------------------\n\n")
 
-	err := client.CreateBucket(bucketName)
+	_, err := client.CreateBucket(bucketName)
 
 	// if the error is because the bucket already exists, ignore the error
 	if err != nil && !strings.Contains(err.Error(), "BucketAlreadyOwnedByYou:") {
@@ -289,7 +283,7 @@ func uploadObjects() {
 			key := generateObjectKey(hostname, t, objectSize)
 
 			// do a HeadObject request to avoid uploading the object if it already exists from a previous test run
-			err := client.HeadObject(bucketName, key)
+			_, err := client.HeadObject(bucketName, key)
 
 			// if no error, then the object exists, so skip this one
 			if err == nil {
@@ -305,7 +299,7 @@ func uploadObjects() {
 			payload := make([]byte, objectSize)
 
 			// do a PutObject request to create the object
-			err = client.PutObject(bucketName, key, bytes.NewReader(payload))
+			_, err = client.PutObject(bucketName, key, bytes.NewReader(payload))
 
 			// if the put fails, exit
 			if err != nil {
@@ -318,7 +312,7 @@ func uploadObjects() {
 }
 
 func runBenchmark() {
-	fmt.Print("\n--- BENCHMARK ----------------------------------------------------------------------------------------------------------------\n\n")
+	fmt.Print("\n--- BENCHMARK ---------------------------------------------------------------------------------------------------------------------------------------------------\n\n")
 
 	// Init the final report
 	report = sbmark.Report{
@@ -370,7 +364,7 @@ func runBenchmark() {
 				}
 			}
 		}
-		fmt.Print("+---------+----------------+------------------------------------------------+------------------------------------------------+\n\n")
+		fmt.Print("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+\n\n")
 	}
 
 	// if the csv option is set, save the report as .csv
@@ -405,44 +399,51 @@ func execTest(threadCount int, payloadSize uint64, runNumber int) {
 	testTasks := make(chan int, threadCount)
 
 	// a channel to receive results from the test tasks back on the main thread
-	results := make(chan latency, samples)
+	results := make(chan sbmark.Latency, samples)
 
 	// create the workers for all the threads in this test
 	for w := 1; w <= threadCount; w++ {
-		go func(o int, tasks <-chan int, results chan<- latency) {
+		go func(o int, tasks <-chan int, results chan<- sbmark.Latency) {
 			for range tasks {
-				setupClient() // reinit the connection so that we can measure DNS lookup, TCP handshake and SSL handshake. This will lead to higher latency numbers...
-				var firstByte, lastByte time.Duration
+				setupClient() // reinit the connection so that we can measure the connection ramp up (DNS lookup, TCP handshake and SSL handshake).
+				var latency sbmark.Latency
 				if operationToTest == "write" {
 					// generate an object key from the sha hash of the current run id, thread index, and object size
 					key := generateObjectKey(string(runNumber), o, payloadSize)
-					firstByte, lastByte = measureWritePerformanceForSingleObject(key, payloadSize)
+					latency = measureWritePerformanceForSingleObject(key, payloadSize)
 				} else {
 					// generate an object key from the sha hash of the hostname, thread index, and object size
 					key := generateObjectKey(hostname, o, payloadSize)
-					firstByte, lastByte = measureReadPerformanceForSingleObject(key, payloadSize)
+					latency = measureReadPerformanceForSingleObject(key, payloadSize)
 				}
 
-				fmt.Printf("TTFB: %d ms\n", firstByte/1000000)
-				fmt.Printf("TTLB: %d ms\n", lastByte/1000000)
-
 				// add the latency result to the results channel
-				results <- latency{FirstByte: firstByte, LastByte: lastByte}
+				results <- latency
 			}
 		}(w, testTasks, results)
 	}
 
 	// construct a new benchmark record
-	dataPoints := []latency{}
+	dataPoints := []sbmark.Latency{}
 	sumFirstByte := int64(0)
 	sumLastByte := int64(0)
+	sumDNSLookup := int64(0)
+	sumTCPConnection := int64(0)
+	sumTLSHandshake := int64(0)
+	sumServerProcessing := int64(0)
+	sumUnassigned := int64(0)
 
 	record := sbmark.Record{
-		ObjectSizeBytes: 0,
-		Operation:       operationToTest,
-		Threads:         threadCount,
-		TimeToFirstByte: make(map[string]float64),
-		TimeToLastByte:  make(map[string]float64),
+		ObjectSizeBytes:  0,
+		Operation:        operationToTest,
+		Threads:          threadCount,
+		TimeToFirstByte:  make(map[string]float64),
+		TimeToLastByte:   make(map[string]float64),
+		DNSLookup:        make(map[string]float64),
+		TCPConnection:    make(map[string]float64),
+		TLSHandshake:     make(map[string]float64),
+		ServerProcessing: make(map[string]float64),
+		Unassigned:       make(map[string]float64),
 	}
 
 	// start the timer for this benchmark
@@ -462,6 +463,11 @@ func execTest(threadCount int, payloadSize uint64, runNumber int) {
 		dataPoints = append(dataPoints, timing)
 		sumFirstByte += timing.FirstByte.Nanoseconds()
 		sumLastByte += timing.LastByte.Nanoseconds()
+		sumDNSLookup += timing.DNSLookup.Nanoseconds()
+		sumTCPConnection += timing.TCPConnection.Nanoseconds()
+		sumTLSHandshake += timing.TLSHandshake.Nanoseconds()
+		sumServerProcessing += timing.ServerProcessing.Nanoseconds()
+		sumUnassigned += timing.Unassigned().Nanoseconds()
 		record.ObjectSizeBytes += payloadSize
 	}
 
@@ -470,7 +476,7 @@ func execTest(threadCount int, payloadSize uint64, runNumber int) {
 	record.DurationSeconds = totalTime.Seconds()
 
 	// calculate the summary statistics for the first byte latencies
-	sort.Sort(ByFirstByte(dataPoints))
+	sort.Sort(sbmark.ByFirstByte(dataPoints))
 	record.TimeToFirstByte["avg"] = (float64(sumFirstByte) / float64(samples)) / 1000000
 	record.TimeToFirstByte["min"] = float64(dataPoints[0].FirstByte.Nanoseconds()) / 1000000
 	record.TimeToFirstByte["max"] = float64(dataPoints[len(dataPoints)-1].FirstByte.Nanoseconds()) / 1000000
@@ -481,7 +487,7 @@ func execTest(threadCount int, payloadSize uint64, runNumber int) {
 	record.TimeToFirstByte["p99"] = float64(dataPoints[int(float64(samples)*float64(0.99))-1].FirstByte.Nanoseconds()) / 1000000
 
 	// calculate the summary statistics for the last byte latencies
-	sort.Sort(ByLastByte(dataPoints))
+	sort.Sort(sbmark.ByLastByte(dataPoints))
 	record.TimeToLastByte["avg"] = (float64(sumLastByte) / float64(samples)) / 1000000
 	record.TimeToLastByte["min"] = float64(dataPoints[0].LastByte.Nanoseconds()) / 1000000
 	record.TimeToLastByte["max"] = float64(dataPoints[len(dataPoints)-1].LastByte.Nanoseconds()) / 1000000
@@ -491,6 +497,61 @@ func execTest(threadCount int, payloadSize uint64, runNumber int) {
 	record.TimeToLastByte["p90"] = float64(dataPoints[int(float64(samples)*float64(0.90))-1].LastByte.Nanoseconds()) / 1000000
 	record.TimeToLastByte["p99"] = float64(dataPoints[int(float64(samples)*float64(0.99))-1].LastByte.Nanoseconds()) / 1000000
 
+	// calculate the summary statistics for the DNS lookup latencies
+	sort.Sort(sbmark.ByDNSLookup(dataPoints))
+	record.DNSLookup["avg"] = (float64(sumDNSLookup) / float64(samples)) / 1000000
+	record.DNSLookup["min"] = float64(dataPoints[0].DNSLookup.Nanoseconds()) / 1000000
+	record.DNSLookup["max"] = float64(dataPoints[len(dataPoints)-1].DNSLookup.Nanoseconds()) / 1000000
+	record.DNSLookup["p25"] = float64(dataPoints[int(float64(samples)*float64(0.25))-1].DNSLookup.Nanoseconds()) / 1000000
+	record.DNSLookup["p50"] = float64(dataPoints[int(float64(samples)*float64(0.5))-1].DNSLookup.Nanoseconds()) / 1000000
+	record.DNSLookup["p75"] = float64(dataPoints[int(float64(samples)*float64(0.75))-1].DNSLookup.Nanoseconds()) / 1000000
+	record.DNSLookup["p90"] = float64(dataPoints[int(float64(samples)*float64(0.90))-1].DNSLookup.Nanoseconds()) / 1000000
+	record.DNSLookup["p99"] = float64(dataPoints[int(float64(samples)*float64(0.99))-1].DNSLookup.Nanoseconds()) / 1000000
+
+	// calculate the summary statistics for the TCP connection latencies
+	sort.Sort(sbmark.ByTCPConnection(dataPoints))
+	record.TCPConnection["avg"] = (float64(sumTCPConnection) / float64(samples)) / 1000000
+	record.TCPConnection["min"] = float64(dataPoints[0].TCPConnection.Nanoseconds()) / 1000000
+	record.TCPConnection["max"] = float64(dataPoints[len(dataPoints)-1].TCPConnection.Nanoseconds()) / 1000000
+	record.TCPConnection["p25"] = float64(dataPoints[int(float64(samples)*float64(0.25))-1].TCPConnection.Nanoseconds()) / 1000000
+	record.TCPConnection["p50"] = float64(dataPoints[int(float64(samples)*float64(0.5))-1].TCPConnection.Nanoseconds()) / 1000000
+	record.TCPConnection["p75"] = float64(dataPoints[int(float64(samples)*float64(0.75))-1].TCPConnection.Nanoseconds()) / 1000000
+	record.TCPConnection["p90"] = float64(dataPoints[int(float64(samples)*float64(0.90))-1].TCPConnection.Nanoseconds()) / 1000000
+	record.TCPConnection["p99"] = float64(dataPoints[int(float64(samples)*float64(0.99))-1].TCPConnection.Nanoseconds()) / 1000000
+
+	// calculate the summary statistics for the TLS handshake latencies
+	sort.Sort(sbmark.ByTLSHandshake(dataPoints))
+	record.TLSHandshake["avg"] = (float64(sumTLSHandshake) / float64(samples)) / 1000000
+	record.TLSHandshake["min"] = float64(dataPoints[0].TLSHandshake.Nanoseconds()) / 1000000
+	record.TLSHandshake["max"] = float64(dataPoints[len(dataPoints)-1].TLSHandshake.Nanoseconds()) / 1000000
+	record.TLSHandshake["p25"] = float64(dataPoints[int(float64(samples)*float64(0.25))-1].TLSHandshake.Nanoseconds()) / 1000000
+	record.TLSHandshake["p50"] = float64(dataPoints[int(float64(samples)*float64(0.5))-1].TLSHandshake.Nanoseconds()) / 1000000
+	record.TLSHandshake["p75"] = float64(dataPoints[int(float64(samples)*float64(0.75))-1].TLSHandshake.Nanoseconds()) / 1000000
+	record.TLSHandshake["p90"] = float64(dataPoints[int(float64(samples)*float64(0.90))-1].TLSHandshake.Nanoseconds()) / 1000000
+	record.TLSHandshake["p99"] = float64(dataPoints[int(float64(samples)*float64(0.99))-1].TLSHandshake.Nanoseconds()) / 1000000
+
+	// calculate the summary statistics for the server processing latencies
+	sort.Sort(sbmark.ByServerProcessing(dataPoints))
+	record.ServerProcessing["avg"] = (float64(sumServerProcessing) / float64(samples)) / 1000000
+	record.ServerProcessing["min"] = float64(dataPoints[0].ServerProcessing.Nanoseconds()) / 1000000
+	record.ServerProcessing["max"] = float64(dataPoints[len(dataPoints)-1].ServerProcessing.Nanoseconds()) / 1000000
+	record.ServerProcessing["p25"] = float64(dataPoints[int(float64(samples)*float64(0.25))-1].ServerProcessing.Nanoseconds()) / 1000000
+	record.ServerProcessing["p50"] = float64(dataPoints[int(float64(samples)*float64(0.5))-1].ServerProcessing.Nanoseconds()) / 1000000
+	record.ServerProcessing["p75"] = float64(dataPoints[int(float64(samples)*float64(0.75))-1].ServerProcessing.Nanoseconds()) / 1000000
+	record.ServerProcessing["p90"] = float64(dataPoints[int(float64(samples)*float64(0.90))-1].ServerProcessing.Nanoseconds()) / 1000000
+	record.ServerProcessing["p99"] = float64(dataPoints[int(float64(samples)*float64(0.99))-1].ServerProcessing.Nanoseconds()) / 1000000
+
+	// calculate the summary statistics for the unassigned latencies
+	sort.Sort(sbmark.ByUnassigned(dataPoints))
+	record.Unassigned["avg"] = (float64(sumUnassigned) / float64(samples)) / 1000000
+	record.Unassigned["min"] = float64(dataPoints[0].Unassigned().Nanoseconds()) / 1000000
+	record.Unassigned["max"] = float64(dataPoints[len(dataPoints)-1].Unassigned().Nanoseconds()) / 1000000
+	record.Unassigned["p25"] = float64(dataPoints[int(float64(samples)*float64(0.25))-1].Unassigned().Nanoseconds()) / 1000000
+	record.Unassigned["p50"] = float64(dataPoints[int(float64(samples)*float64(0.5))-1].Unassigned().Nanoseconds()) / 1000000
+	record.Unassigned["p75"] = float64(dataPoints[int(float64(samples)*float64(0.75))-1].Unassigned().Nanoseconds()) / 1000000
+	record.Unassigned["p90"] = float64(dataPoints[int(float64(samples)*float64(0.90))-1].Unassigned().Nanoseconds()) / 1000000
+	record.Unassigned["p99"] = float64(dataPoints[int(float64(samples)*float64(0.99))-1].Unassigned().Nanoseconds()) / 1000000
+
 	// determine what to put in the first column of the results
 	c := record.Threads
 	if throttlingMode {
@@ -498,27 +559,28 @@ func execTest(threadCount int, payloadSize uint64, runNumber int) {
 	}
 
 	// print the results to stdout
-	fmt.Printf("| %7d | %9.3f MB/s |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |\n",
+	fmt.Printf("| %7d | %9.3f MB/s |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |%7.0f %5.0f %5.0f %5.0f %6.0f  |\n",
 		c, record.ThroughputMBps(),
 		record.TimeToFirstByte["avg"], record.TimeToFirstByte["min"], record.TimeToFirstByte["p25"], record.TimeToFirstByte["p50"], record.TimeToFirstByte["p75"], record.TimeToFirstByte["p90"], record.TimeToFirstByte["p99"], record.TimeToFirstByte["max"],
-		record.TimeToLastByte["avg"], record.TimeToLastByte["min"], record.TimeToLastByte["p25"], record.TimeToLastByte["p50"], record.TimeToLastByte["p75"], record.TimeToLastByte["p90"], record.TimeToLastByte["p99"], record.TimeToLastByte["max"])
+		record.TimeToLastByte["avg"], record.TimeToLastByte["min"], record.TimeToLastByte["p25"], record.TimeToLastByte["p50"], record.TimeToLastByte["p75"], record.TimeToLastByte["p90"], record.TimeToLastByte["p99"], record.TimeToLastByte["max"],
+		record.DNSLookup["avg"], record.TCPConnection["avg"], record.TLSHandshake["avg"], record.ServerProcessing["avg"], record.Unassigned["avg"])
 
 	// append the record to the report
 	report.Records = append(report.Records, record)
 }
 
-func measureReadPerformanceForSingleObject(key string, payloadSize uint64) (firstByte time.Duration, lastByte time.Duration) {
+func measureReadPerformanceForSingleObject(key string, payloadSize uint64) sbmark.Latency {
 	// start the timer to measure the first byte and last byte latencies
 	latencyTimer := time.Now()
 	// do the GetObject request
 
-	dataStream, err := client.GetObject(bucketName, key)
+	latency, dataStream, err := client.GetObject(bucketName, key)
 	// if a request fails, exit
 	if err != nil {
 		panic("Failed to get object: " + err.Error())
 	}
 	// measure the first byte latency
-	firstByte = time.Now().Sub(latencyTimer)
+	latency.FirstByte = time.Now().Sub(latencyTimer)
 	// create a buffer to copy the object body to
 	var buf = make([]byte, payloadSize)
 	// read the object body into the buffer
@@ -539,11 +601,13 @@ func measureReadPerformanceForSingleObject(key string, payloadSize uint64) (firs
 	}
 	_ = dataStream.Close()
 	// measure the last byte latency
-	lastByte = time.Now().Sub(latencyTimer)
-	return firstByte, lastByte
+	latency.LastByte = time.Now().Sub(latencyTimer)
+
+	return latency
 }
 
-func measureWritePerformanceForSingleObject(key string, payloadSize uint64) (firstByte time.Duration, lastByte time.Duration) {
+func measureWritePerformanceForSingleObject(key string, payloadSize uint64) sbmark.Latency {
+	var latency sbmark.Latency
 	i := 0
 	for true {
 		// generate empty payload
@@ -555,23 +619,20 @@ func measureWritePerformanceForSingleObject(key string, payloadSize uint64) (fir
 		// start the timer to measure the first byte and last byte latencies
 		latencyTimer := time.Now()
 
-		// measure the first byte latency
-		firstByte = time.Now().Sub(latencyTimer)
-
-		// do a PutObject request to create the object
-		err := client.PutObject(bucketName, key, bytes.NewReader(payload))
+		// do a PutObject request to create the object and init the Latency struct
+		latency, err := client.PutObject(bucketName, key, bytes.NewReader(payload))
 
 		// measure the last byte latency
-		lastByte = time.Now().Sub(latencyTimer)
+		latency.LastByte = time.Now().Sub(latencyTimer)
 		switch err {
 		case nil:
-			return
+			return latency
 		default:
 			logger.Println(" Error during request:" + err.Error())
 			i++
 		}
 	}
-	return firstByte, lastByte
+	return latency
 }
 
 // prints the table header for the test results
@@ -582,15 +643,15 @@ func printHeader(objectSize uint64) {
 		testTitle = "Write performance to"
 	}
 	fmt.Printf("%s %s with %-s objects\n", testTitle, endpoint, byteFormat(float64(objectSize)))
-	fmt.Println("                           +-------------------------------------------------------------------------------------------------+")
-	fmt.Println("                           |            Time to First Byte (ms)             |            Time to Last Byte (ms)              |")
-	fmt.Println("+---------+----------------+------------------------------------------------+------------------------------------------------+")
+	fmt.Println("                           +-------------------------------------------------------------------------------------------------+----------------------------------+")
+	fmt.Println("                           |            Time to First Byte (ms)             |            Time to Last Byte (ms)              | Latency Distribution (avg in ms) |")
+	fmt.Println("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+")
 	if !throttlingMode {
-		fmt.Println("| Threads |     Throughput |  avg   min   p25   p50   p75   p90   p99   max |  avg   min   p25   p50   p75   p90   p99   max |")
+		fmt.Println("| Threads |     Throughput |  avg   min   p25   p50   p75   p90   p99   max |  avg   min   p25   p50   p75   p90   p99   max |    dns   tcp   tls   srv   rest  |")
 	} else {
-		fmt.Println("|       # |     Throughput |  avg   min   p25   p50   p75   p90   p99   max |  avg   min   p25   p50   p75   p90   p99   max |")
+		fmt.Println("|       # |     Throughput |  avg   min   p25   p50   p75   p90   p99   max |  avg   min   p25   p50   p75   p90   p99   max |    dns   tcp   tls   srv   rest  |")
 	}
-	fmt.Println("+---------+----------------+------------------------------------------------+------------------------------------------------+")
+	fmt.Println("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+")
 }
 
 // generates an object key from the sha hash of the hostname, thread index, and object size
@@ -622,7 +683,7 @@ func generateRandomString(seed int) string {
 
 // cleans up the uploaded objects for this test (but doesn't remove the bucket)
 func cleanup() {
-	fmt.Print("\n--- CLEANUP ------------------------------------------------------------------------------------------------------------------\n\n")
+	fmt.Print("\n--- CLEANUP -----------------------------------------------------------------------------------------------------------------------------------------------------\n\n")
 
 	fmt.Printf("Deleting any objects uploaded from %s to %s\n", hostname, endpoint)
 
@@ -661,7 +722,7 @@ func deleteSingleObject(runNumber string, threadIdx int, payloadSize uint64) {
 	key := generateObjectKey(runNumber, threadIdx, payloadSize)
 
 	// make a DeleteObject request
-	err := client.DeleteObject(bucketName, key)
+	_, err := client.DeleteObject(bucketName, key)
 
 	// if the object doesn't exist, ignore the error
 	if err != nil && !strings.HasPrefix(err.Error(), "NotFound: Not Found") {
@@ -696,17 +757,3 @@ func payloadSizeGenerator() func() uint64 {
 		return thisPayloadSize
 	}
 }
-
-// comparator to sort by first byte latency
-type ByFirstByte []latency
-
-func (a ByFirstByte) Len() int           { return len(a) }
-func (a ByFirstByte) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a ByFirstByte) Less(i, j int) bool { return a[i].FirstByte < a[j].FirstByte }
-
-// comparator to sort by last byte latency
-type ByLastByte []latency
-
-func (a ByLastByte) Len() int           { return len(a) }
-func (a ByLastByte) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
-func (a ByLastByte) Less(i, j int) bool { return a[i].LastByte < a[j].LastByte }

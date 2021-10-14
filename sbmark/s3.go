@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
-	"fmt"
 	"io"
 	"net/http"
 	"time"
@@ -75,62 +74,76 @@ func NewS3Client(obConfig *S3ObjectClientConfig) BenchmarkAPI {
 	}
 }
 
-func (c *S3ObjectClient) CreateBucket(bucketName string) error {
-	s3Client := c.delegate
-	_, err := s3Client.CreateBucket(context.TODO(), &s3.CreateBucketInput{
-		Bucket: aws.String(bucketName),
-	})
-	return err
-}
-
-func (c *S3ObjectClient) HeadObject(bucketName string, key string) error {
-	s3Client := c.delegate
-	_, err := s3Client.HeadObject(context.TODO(), &s3.HeadObjectInput{
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(key),
-	})
-	return err
-}
-
-func (c *S3ObjectClient) PutObject(bucketName string, key string, reader *bytes.Reader) error {
+func (c *S3ObjectClient) CreateBucket(bucketName string) (Latency, error) {
 	var result httpstat.Result
 	ctx := httpstat.WithHTTPStat(context.TODO(), &result)
 	s3Client := c.delegate
+
+	_, err := s3Client.CreateBucket(ctx, &s3.CreateBucketInput{
+		Bucket: aws.String(bucketName),
+	})
+
+	return latency(result), err
+}
+
+func (c *S3ObjectClient) HeadObject(bucketName string, key string) (Latency, error) {
+	var result httpstat.Result
+	ctx := httpstat.WithHTTPStat(context.TODO(), &result)
+	s3Client := c.delegate
+
+	_, err := s3Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(key),
+	})
+
+	return latency(result), err
+}
+
+func (c *S3ObjectClient) PutObject(bucketName string, key string, reader *bytes.Reader) (Latency, error) {
+	var result httpstat.Result
+	ctx := httpstat.WithHTTPStat(context.TODO(), &result)
+	s3Client := c.delegate
+
 	_, err := s3Client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 		Body:   reader,
 	})
 
-	// Show the results
-	fmt.Printf("DNS lookup: %d ms\n", int(result.DNSLookup/time.Millisecond))
-	fmt.Printf("TCP connection: %d ms\n", int(result.TCPConnection/time.Millisecond))
-	fmt.Printf("TLS handshake: %d ms\n", int(result.TLSHandshake/time.Millisecond))
-	fmt.Printf("Server processing: %d ms\n", int(result.ServerProcessing/time.Millisecond))
-	return err
+	lat := latency(result)
+	return lat, err
 }
 
-func (c *S3ObjectClient) GetObject(bucketName string, key string) (io.ReadCloser, error) {
+func (c *S3ObjectClient) GetObject(bucketName string, key string) (Latency, io.ReadCloser, error) {
 	var result httpstat.Result
 	ctx := httpstat.WithHTTPStat(context.TODO(), &result)
 	s3Client := c.delegate
+
 	resp, err := s3Client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
-	// Show the results
-	fmt.Printf("DNS lookup: %d ms\n", int(result.DNSLookup/time.Millisecond))
-	fmt.Printf("TCP connection: %d ms\n", int(result.TCPConnection/time.Millisecond))
-	fmt.Printf("TLS handshake: %d ms\n", int(result.TLSHandshake/time.Millisecond))
-	fmt.Printf("Server processing: %d ms\n", int(result.ServerProcessing/time.Millisecond))
-	return resp.Body, err
+
+	return latency(result), resp.Body, err
 }
 
-func (c *S3ObjectClient) DeleteObject(bucketName string, key string) error {
+func (c *S3ObjectClient) DeleteObject(bucketName string, key string) (Latency, error) {
+	var result httpstat.Result
+	ctx := httpstat.WithHTTPStat(context.TODO(), &result)
 	s3Client := c.delegate
-	_, err := s3Client.DeleteObject(context.TODO(), &s3.DeleteObjectInput{
+
+	_, err := s3Client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
-	return err
+	return latency(result), err
+}
+
+func latency(result httpstat.Result) Latency {
+	return Latency{
+		DNSLookup:        result.DNSLookup,
+		TCPConnection:    result.TCPConnection,
+		TLSHandshake:     result.TLSHandshake,
+		ServerProcessing: result.ServerProcessing,
+	}
 }

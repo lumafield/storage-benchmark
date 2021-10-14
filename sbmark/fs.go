@@ -40,36 +40,37 @@ func (c *FsObjectClient) createDirectory(path string, key string) string {
 	return filepath.Join(path, splitteKey[0], splitteKey[1])
 }
 
-func (c *FsObjectClient) CreateBucket(bucketName string) error {
-	return os.MkdirAll(c.bucketPath(bucketName), os.ModePerm)
+func (c *FsObjectClient) CreateBucket(bucketName string) (Latency, error) {
+	return Latency{}, os.MkdirAll(c.bucketPath(bucketName), os.ModePerm)
 }
 
-func (c *FsObjectClient) HeadObject(bucketName string, key string) error {
+func (c *FsObjectClient) HeadObject(bucketName string, key string) (Latency, error) {
 	_, err := os.Stat(c.objectPath(bucketName, key))
 	if os.IsExist(err) {
-		return nil
+		return Latency{}, nil
 	}
-	return errors.New("NotFound: " + c.objectPath(bucketName, key))
+	return Latency{}, errors.New("NotFound: " + c.objectPath(bucketName, key))
 }
 
-func (c *FsObjectClient) PutObject(bucketName string, key string, reader *bytes.Reader) error {
+func (c *FsObjectClient) PutObject(bucketName string, key string, reader *bytes.Reader) (Latency, error) {
 	writer, err := os.Create(c.objectPath(bucketName, key))
 	if err != nil {
-		return err
+		return Latency{}, err
 	}
 	_, err = reader.WriteTo(writer)
-	return err
+	return Latency{}, err
 }
 
-func (c *FsObjectClient) GetObject(bucketName string, key string) (io.ReadCloser, error) {
-	return os.Open(c.objectPath(bucketName, key))
+func (c *FsObjectClient) GetObject(bucketName string, key string) (Latency, io.ReadCloser, error) {
+	readCloser, err := os.Open(c.objectPath(bucketName, key))
+	return Latency{}, readCloser, err
 }
 
-func (c *FsObjectClient) DeleteObject(bucketName string, key string) error {
+func (c *FsObjectClient) DeleteObject(bucketName string, key string) (Latency, error) {
 
 	if err := os.Remove(c.objectPath(bucketName, key)); err != nil {
 		// TODO if file does not exist return errors.New("NotFound: Not found "+c.objectPath(bucketName, key))
 		// How to check err for ENOENT?
 	}
-	return nil
+	return Latency{}, nil
 }

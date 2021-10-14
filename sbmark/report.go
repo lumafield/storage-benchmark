@@ -12,12 +12,17 @@ type Report struct {
 }
 
 type Record struct {
-	Operation       string             `json:"operation"` // read, write, ...
-	ObjectSizeBytes uint64             `json:"object_size_bytes"`
-	DurationSeconds float64            `json:"duration_secs"`
-	Threads         int                `json:"threads"`
-	TimeToFirstByte map[string]float64 `json:"ttfb_latency_ms"`
-	TimeToLastByte  map[string]float64 `json:"ttlb_latency_ms"`
+	Operation        string             `json:"operation"` // read, write, ...
+	ObjectSizeBytes  uint64             `json:"object_size_bytes"`
+	DurationSeconds  float64            `json:"duration_secs"`
+	Threads          int                `json:"threads"`
+	TimeToFirstByte  map[string]float64 `json:"ttfb_latency_ms"`
+	TimeToLastByte   map[string]float64 `json:"ttlb_latency_ms"`
+	DNSLookup        map[string]float64 `json:"dns_latency_ms"`
+	TCPConnection    map[string]float64 `json:"tcp_latency_ms"`
+	TLSHandshake     map[string]float64 `json:"tls_latency_ms"`
+	ServerProcessing map[string]float64 `json:"server_latency_ms"`
+	Unassigned       map[string]float64 `json:"unassigned_latency_ms"`
 }
 
 func (r *Record) ThroughputMBps() float64 {
