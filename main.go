@@ -30,6 +30,9 @@ type latency struct {
 const bucketNamePrefix = "storage-benchmark"
 const samplesMin = 4 // to calculate the 0.25 percentile we need at least 4 samples of each run
 
+// an optional description of the test run. It will be added to the .json report.
+var description string
+
 // the hostname where this benchmark is executed from
 var hostname = getHostname()
 
@@ -119,6 +122,7 @@ func main() {
 }
 
 func parseFlags() {
+	descriptionArg := flag.String("description", "", "The description of your test run run will be added to the .json report.")
 	threadsMinArg := flag.Int("threads-min", 8, "The minimum number of threads to use when fetching objects.")
 	threadsMaxArg := flag.Int("threads-max", 16, "The maximum number of threads to use when fetching objects.")
 	payloadsMinArg := flag.Int("payloads-min", 1, "The minimum object size to test, with 1 = 1 KB, and every increment is a double of the previous value.")
@@ -139,6 +143,8 @@ func parseFlags() {
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
+
+	description = *descriptionArg
 
 	if *bucketNameArg != "" {
 		bucketName = *bucketNameArg
@@ -316,10 +322,11 @@ func runBenchmark() {
 
 	// Init the final report
 	report = sbmark.Report{
+		Description: description,
+		ClientEnv:   fmt.Sprintf("Application: %s, Host: %s, OS: %s", filepath.Base(os.Args[0]), getHostname(), runtime.GOOS),
+		ServerEnv:   endpoint, // How can we get some informations about the ServerEnv? Or should this be a CLI param?
 		Endpoint:    endpoint,
 		Path:        bucketName,
-		ClientEnv:   fmt.Sprintf("Application: %s, Host: %s, OS: %s", filepath.Base(os.Args[0]), getHostname(), runtime.GOOS),
-		ServerEnv:   endpoint,
 		DateTimeUTC: time.Now().UTC().String(),
 		Samples:     samples,
 		Records:     []sbmark.Record{},
