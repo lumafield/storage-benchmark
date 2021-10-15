@@ -54,9 +54,6 @@ var samples int
 // a test mode to find out when EC2 network throttling kicks in
 var throttlingMode bool
 
-// flag to cleanup the bucket and exit the program
-var cleanupOnly bool
-
 // if not empty, the results of the test are saved as .csv file
 var csvFileName string
 
@@ -88,34 +85,13 @@ var numberOfRuns int = 0
 
 // program entry point
 func main() {
-	// parse the program arguments and set the global variables
 	parseFlags()
-
-	//
 	setupLogger()
-
-	// set up the client SDK
 	setupClient()
-
-	// if given the flag to cleanup only, then run the cleanup and exit the program
-	if cleanupOnly {
-		cleanup()
-		return
-	}
-
 	if createBucket {
-		// create the bucket
 		createBenchmarkBucket()
 	}
-
-	// upload the test data (if needed)
-	uploadObjects()
-
-	// run the test against the uploaded data
 	runBenchmark()
-
-	// remove the objects uploaded for this test (but doesn't remove the bucket)
-	cleanup()
 }
 
 func parseFlags() {
@@ -130,7 +106,6 @@ func parseFlags() {
 	endpointArg := flag.String("endpoint", "", "Sets the endpoint to use. Might be any URI.")
 	fullArg := flag.Bool("full", false, "Runs the full exhaustive test, and overrides the threads and payload arguments.")
 	throttlingModeArg := flag.Bool("throttling-mode", false, "Runs a continuous test to find out when EC2 network throttling kicks in.")
-	cleanupArg := flag.Bool("cleanup", false, "Cleans all the objects uploaded for this test.")
 	csvArg := flag.String("csv", "", "Saves the results as .csv file.")
 	jsonArg := flag.String("json", "", "Saves the results as .json file.")
 	operationArg := flag.String("operation", "read", "Specify if you want to measure 'read' or 'write'. Default is 'read'")
@@ -160,7 +135,6 @@ func parseFlags() {
 	threadsMin = *threadsMinArg
 	threadsMax = *threadsMaxArg
 	samples = maxOf(*samplesArg, samplesMin)
-	cleanupOnly = *cleanupArg
 	csvFileName = *csvArg
 	jsonFileName = *jsonArg
 	createBucket = *createBucketArg
@@ -247,74 +221,52 @@ func createBenchmarkBucket() {
 
 	_, err := client.CreateBucket(bucketName)
 
+	fmt.Printf("Created target path %s\n\n", getTargetPath())
+
 	// if the error is because the bucket already exists, ignore the error
 	if err != nil && !strings.Contains(err.Error(), "BucketAlreadyOwnedByYou:") {
 		panic("Failed to create bucket: " + err.Error())
 	}
 }
 
-func uploadObjects() {
-	// If "write" operation should be tested, we don't need to upload test data.
-	if operationToTest == "write" {
-		return
-	}
+func uploadObjects(payloadSize uint64, bar *progressbar.ProgressBar) {
 
-	// an object size iterator that starts from 1 KB and doubles the size on every iteration
-	generatePayload := payloadSizeGenerator()
+	// create an object for every thread, so that different threads don's download the same object
+	for s := 1; s <= samples; s++ {
+		// increment the progress bar for each object
+		_ = bar.Add(1)
 
-	// loop over every payload size (we need to start at p := 1 because of the generatePayload() function)
-	for p := 1; p <= payloadsMax; p++ {
-		// get an object size from the iterator
-		objectSize := generatePayload()
+		// generate an object key from the sha hash of the hostname, thread index, and object size
+		key := generateObjectKey(hostname, s, payloadSize)
 
-		// ignore payloads smaller than the min argument.
-		if p < payloadsMin {
+		// do a HeadObject request to avoid uploading the object if it already exists from a previous test run
+		_, err := client.HeadObject(bucketName, key)
+
+		// if no error, then the object exists, so skip this one
+		if err == nil {
 			continue
 		}
 
-		fmt.Printf("Uploading %-s objects\n", byteFormat(float64(objectSize)))
-
-		// create a progress bar
-		bar := progressbar.NewOptions(samples-1, progressbar.OptionSetRenderBlankState(true))
-
-		// create an object for every thread, so that different threads don's download the same object
-		for s := 1; s <= samples; s++ {
-			// increment the progress bar for each object
-			_ = bar.Add(1)
-
-			// generate an object key from the sha hash of the hostname, thread index, and object size
-			key := generateObjectKey(hostname, s, objectSize)
-
-			// do a HeadObject request to avoid uploading the object if it already exists from a previous test run
-			_, err := client.HeadObject(bucketName, key)
-
-			// if no error, then the object exists, so skip this one
-			if err == nil {
-				continue
-			}
-
-			// if other error, exit
-			if err != nil && !strings.Contains(err.Error(), "NotFound:") {
-				panic("Failed to head object: " + err.Error())
-			}
-
-			// generate empty payload
-			payload := make([]byte, objectSize)
-
-			// do a PutObject request to create the object
-			_, err = client.PutObject(bucketName, key, bytes.NewReader(payload))
-
-			// if the put fails, exit
-			if err != nil {
-				panic("Failed to put object: " + err.Error())
-			}
+		// if other error, exit
+		if err != nil && !strings.Contains(err.Error(), "NotFound:") {
+			panic("Failed to head object: " + err.Error())
 		}
 
-		fmt.Print("\n")
+		// generate reader
+		reader := bytes.NewReader(make([]byte, payloadSize))
+
+		// do a PutObject request to create the object
+		_, err = client.PutObject(bucketName, key, reader)
+
+		// if the put fails, exit
+		if err != nil {
+			panic("Failed to put object: " + err.Error())
+		}
 	}
 }
 
 func runBenchmark() {
+
 	fmt.Print("\n--- BENCHMARK ---------------------------------------------------------------------------------------------------------------------------------------------------\n\n")
 
 	// Init the final report
@@ -342,6 +294,14 @@ func runBenchmark() {
 			continue
 		}
 
+		if operationToTest != "write" {
+			// upload the objects for this run (if needed)
+			fmt.Printf("Uploading %d x %s objects\n", numberOfObjectsPerPayload(), byteFormat(float64(payload)))
+			uploadBar := progressbar.NewOptions(samples-1, progressbar.OptionSetRenderBlankState(true))
+			uploadObjects(payload, uploadBar)
+			fmt.Print("\n\n")
+		}
+
 		// print the header for the benchmark of this object size
 		printHeader(payload)
 
@@ -367,6 +327,13 @@ func runBenchmark() {
 			}
 		}
 		fmt.Print("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+\n\n")
+
+		fmt.Printf("Deleting %d x %s objects\n", numberOfObjectsPerPayload(), byteFormat(float64(payload)))
+		cleanupBar := progressbar.NewOptions(samples-1, progressbar.OptionSetRenderBlankState(true))
+		cleanupObjects(payload, cleanupBar)
+
+		fmt.Printf("\n\n\n\n")
+
 	}
 
 	// if the csv option is set, save the report as .csv
@@ -409,11 +376,9 @@ func execTest(threadCount int, payloadSize uint64, runId int) {
 			for sampleId := range tasks {
 				var latency sbmark.Latency
 				if operationToTest == "write" {
-					// generate an object key from the sha hash of the current run id, thread index, and object size
 					key := generateObjectKey(string(runId), sampleId, payloadSize)
 					latency = measureWritePerformanceForSingleObject(key, payloadSize)
 				} else {
-					// generate an object key from the sha hash of the hostname, thread index, and object size
 					key := generateObjectKey(hostname, sampleId, payloadSize)
 					latency = measureReadPerformanceForSingleObject(key, payloadSize)
 				}
@@ -641,11 +606,7 @@ func measureWritePerformanceForSingleObject(key string, payloadSize uint64) sbma
 // prints the table header for the test results
 func printHeader(objectSize uint64) {
 	// print the table header
-	testTitle := "Read performance from"
-	if operationToTest == "write" {
-		testTitle = "Write performance to"
-	}
-	fmt.Printf("%s %s with %-s objects\n", testTitle, endpoint, byteFormat(float64(objectSize)))
+	fmt.Printf("Performance of operation '%s' with %s objects\n", operationToTest, byteFormat(float64(objectSize)))
 	fmt.Println("                           +-------------------------------------------------------------------------------------------------+----------------------------------+")
 	fmt.Println("                           |            Time to First Byte (ms)             |            Time to Last Byte (ms)              | Latency Distribution (avg in ms) |")
 	fmt.Println("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+")
@@ -684,43 +645,20 @@ func generateRandomString(seed int) string {
 	return b.String()
 }
 
-// cleans up the uploaded objects for this test (but doesn't remove the bucket)
-func cleanup() {
-	fmt.Print("\n--- CLEANUP -----------------------------------------------------------------------------------------------------------------------------------------------------\n\n")
-
-	fmt.Printf("Deleting any objects uploaded from %s to %s\n", hostname, endpoint)
-
-	// create a progress bar
-	bar := progressbar.NewOptions(numberOfObjectsPerRun()-1, progressbar.OptionSetRenderBlankState(true))
-
-	// an object size iterator that starts from 1 KB and doubles the size on every iteration
-	generatePayload := payloadSizeGenerator()
-
-	// loop over every payload size (we have to start at p := 1 because of the generatePayload() function)
-	for p := 1; p <= payloadsMax; p++ {
-		// get an object size from the iterator
-		payloadSize := generatePayload()
-
-		// ignore payloads smaller than the min argument.
-		if p < payloadsMin {
-			continue
-		}
-
-		// loop over all samples
-		for s := 1; s <= samples; s++ {
-			// increment the progress bar
-			_ = bar.Add(1)
-			if operationToTest == "write" {
-				// loop over all runs
-				for r := 1; r <= numberOfRuns; r++ {
-					deleteSingleObject(string(r), s, payloadSize)
-				}
-			} else {
-				deleteSingleObject(hostname, s, payloadSize)
+func cleanupObjects(payloadSize uint64, bar *progressbar.ProgressBar) {
+	// loop over all samples
+	for s := 1; s <= samples; s++ {
+		// increment the progress bar
+		_ = bar.Add(1)
+		if operationToTest == "write" {
+			// loop over all runs
+			for r := 1; r <= numberOfRuns; r++ {
+				deleteSingleObject(string(r), s, payloadSize)
 			}
+		} else {
+			deleteSingleObject(hostname, s, payloadSize)
 		}
 	}
-	fmt.Print("\n\n")
 }
 
 func deleteSingleObject(runIdOrHostname string, threadIdx int, payloadSize uint64) {
@@ -736,12 +674,12 @@ func deleteSingleObject(runIdOrHostname string, threadIdx int, payloadSize uint6
 	}
 }
 
-func numberOfObjectsPerRun() int {
-	return numberOfPayloads() * samples
+func numberOfObjectsPerPayload() int {
+	return numberOfThreads() * samples
 }
 
-func numberOfPayloads() int {
-	return payloadsMax - payloadsMin + 1
+func numberOfThreads() int {
+	return threadsMax - threadsMin + 1
 }
 
 // gets the name of the host that executes the test.
@@ -751,6 +689,10 @@ func getHostname() string {
 		panic(err)
 	}
 	return hostname
+}
+
+func getTargetPath() string {
+	return fmt.Sprintf("%s/%s", endpoint, bucketName)
 }
 
 // formats bytes to KB or MB
