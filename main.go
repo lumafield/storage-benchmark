@@ -574,17 +574,21 @@ func execTest(threadCount int, payloadSize uint64, runId int) {
 func measureReadPerformanceForSingleObject(key string, payloadSize uint64) sbmark.Latency {
 	// start the timer to measure the first byte and last byte latencies
 	latencyTimer := time.Now()
-	// do the GetObject request
 
+	// do the GetObject request
 	latency, dataStream, err := client.GetObject(bucketName, key)
+
 	// if a request fails, exit
 	if err != nil {
 		panic("Failed to get object: " + err.Error())
 	}
+
 	// measure the first byte latency
 	latency.FirstByte = time.Now().Sub(latencyTimer)
+
 	// create a buffer to copy the object body to
 	var buf = make([]byte, payloadSize)
+
 	// read the object body into the buffer
 	size := 0
 	for {
@@ -601,38 +605,38 @@ func measureReadPerformanceForSingleObject(key string, payloadSize uint64) sbmar
 			panic("Error reading object body: " + err.Error())
 		}
 	}
-	_ = dataStream.Close()
+
+	err = dataStream.Close()
+
 	// measure the last byte latency
 	latency.LastByte = time.Now().Sub(latencyTimer)
+
+	// if the datastream can't be closed, exit
+	if err != nil {
+		panic("Error closing the datastream: " + err.Error())
+	}
 
 	return latency
 }
 
 func measureWritePerformanceForSingleObject(key string, payloadSize uint64) sbmark.Latency {
-	i := 0
-	for {
-		// generate empty payload
-		payload := make([]byte, payloadSize)
-		if i > 0 {
-			key = generateObjectKey(string(time.Now().Nanosecond()), rand.Intn(1000), payloadSize)
-			logger.Println(" Info: Generate new key with value '" + key + "'")
-		}
-		// start the timer to measure the first byte and last byte latencies
-		latencyTimer := time.Now()
+	reader := bytes.NewReader(make([]byte, payloadSize))
 
-		// do a PutObject request to create the object and init the Latency struct
-		latency, err := client.PutObject(bucketName, key, bytes.NewReader(payload))
+	// start the timer
+	latencyTimer := time.Now()
 
-		// measure the last byte latency
-		latency.LastByte = time.Now().Sub(latencyTimer)
-		switch err {
-		case nil:
-			return latency
-		default:
-			logger.Println(" Error during request:" + err.Error())
-			i++
-		}
+	// do a PutObject request to create the object and init the Latency struct
+	latency, err := client.PutObject(bucketName, key, reader)
+
+	// measure the last byte latency
+	latency.LastByte = time.Now().Sub(latencyTimer)
+
+	// if a request fails, exit
+	if err != nil {
+		panic("Failed to put object: " + err.Error())
 	}
+
+	return latency
 }
 
 // prints the table header for the test results
