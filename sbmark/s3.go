@@ -52,7 +52,8 @@ func NewS3Client(obConfig *S3ObjectClientConfig) BenchmarkAPI {
 
 	// trust all certificates
 	tr := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: obConfig.Insecure},
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: obConfig.Insecure},
+		DisableKeepAlives: true, // Disables connection pooling, so that TCP and TLS handshakes has to be done on every request.
 	}
 	// set a 3-minute timeout for all S3 calls, including downloading the body
 	cfg.HTTPClient = &http.Client{
@@ -123,6 +124,10 @@ func (c *S3ObjectClient) GetObject(bucketName string, key string) (Latency, io.R
 		Bucket: aws.String(bucketName),
 		Key:    aws.String(key),
 	})
+
+	if err != nil {
+		return latency(result), nil, err
+	}
 
 	return latency(result), resp.Body, err
 }

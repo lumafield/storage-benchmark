@@ -63,7 +63,7 @@ var csvFileName string
 // if not empty, the results of the test are saved as .json file
 var jsonFileName string
 
-// the client to operate on objects
+// the client to operate on objects. It's safe to use a single client across multiple go routines.
 var client sbmark.BenchmarkAPI
 
 // operations might be "read" or "write. Default is "read".
@@ -407,7 +407,6 @@ func execTest(threadCount int, payloadSize uint64, runId int) {
 	for t := 1; t <= threadCount; t++ {
 		go func(threadId int, tasks <-chan int, results chan<- sbmark.Latency) {
 			for sampleId := range tasks {
-				setupClient() // reinit the connection so that we can measure the connection ramp up (DNS lookup, TCP handshake and SSL handshake).
 				var latency sbmark.Latency
 				if operationToTest == "write" {
 					// generate an object key from the sha hash of the current run id, thread index, and object size
