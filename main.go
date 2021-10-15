@@ -24,6 +24,13 @@ import (
 const bucketNamePrefix = "storage-benchmark"
 const samplesMin = 4 // to calculate the 0.25 percentile we need at least 4 samples of each run
 
+// use go build -ldflags "-X main.buildstamp=`date -u '+%Y-%m-%d_%I:%M:%S%p'` -X main.githash=`git rev-parse HEAD`"
+var buildstamp = "No build stamp provided"
+var githash = "No git hash provided"
+
+// wether to display the version information
+var showVersion bool
+
 // an optional description of the test run. It will be added to the .json report.
 var description string
 
@@ -86,6 +93,12 @@ var numberOfRuns int = 0
 // program entry point
 func main() {
 	parseFlags()
+
+	if showVersion {
+		displayVersion()
+		return
+	}
+
 	setupLogger()
 	setupClient()
 	if createBucket {
@@ -95,6 +108,7 @@ func main() {
 }
 
 func parseFlags() {
+	versionArg := flag.Bool("version", false, "Displays the version information.")
 	descriptionArg := flag.String("description", "", "The description of your test run run will be added to the .json report.")
 	threadsMinArg := flag.Int("threads-min", 8, "The minimum number of threads to use when fetching objects.")
 	threadsMaxArg := flag.Int("threads-max", 16, "The maximum number of threads to use when fetching objects.")
@@ -115,6 +129,8 @@ func parseFlags() {
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
+
+	showVersion = *versionArg
 
 	description = *descriptionArg
 
@@ -188,6 +204,11 @@ func parseFlags() {
 		}
 		operationToTest = *operationArg
 	}
+}
+
+func displayVersion() {
+	fmt.Printf("Git Commit Hash: %s\n", githash)
+	fmt.Printf("UTC Build Time: %s", buildstamp)
 }
 
 func maxOf(a, b int) int {
