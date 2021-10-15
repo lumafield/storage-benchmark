@@ -83,6 +83,9 @@ var infiniteMode bool
 // The final report of this benchmark run
 var report sbmark.Report
 
+// For infinite or throttling mode a numberOfRuns is incremented for every loop.
+var numberOfRuns int = 0
+
 // program entry point
 func main() {
 	// parse the program arguments and set the global variables
@@ -259,12 +262,12 @@ func uploadObjects() {
 	// an object size iterator that starts from 1 KB and doubles the size on every iteration
 	generatePayload := payloadSizeGenerator()
 
-	// loop over every payload size
+	// loop over every payload size (we need to start at p := 1 because of the generatePayload() function)
 	for p := 1; p <= payloadsMax; p++ {
 		// get an object size from the iterator
 		objectSize := generatePayload()
 
-		// ignore payloads smaller than the min argument
+		// ignore payloads smaller than the min argument.
 		if p < payloadsMin {
 			continue
 		}
@@ -272,15 +275,15 @@ func uploadObjects() {
 		fmt.Printf("Uploading %-s objects\n", byteFormat(float64(objectSize)))
 
 		// create a progress bar
-		bar := progressbar.NewOptions(threadsMax-1, progressbar.OptionSetRenderBlankState(true))
+		bar := progressbar.NewOptions(samples-1, progressbar.OptionSetRenderBlankState(true))
 
-		// create an object for every thread, so that different threads don't download the same object
-		for t := 1; t <= threadsMax; t++ {
+		// create an object for every thread, so that different threads don's download the same object
+		for s := 1; s <= samples; s++ {
 			// increment the progress bar for each object
 			_ = bar.Add(1)
 
 			// generate an object key from the sha hash of the hostname, thread index, and object size
-			key := generateObjectKey(hostname, t, objectSize)
+			key := generateObjectKey(hostname, s, objectSize)
 
 			// do a HeadObject request to avoid uploading the object if it already exists from a previous test run
 			_, err := client.HeadObject(bucketName, key)
@@ -328,9 +331,8 @@ func runBenchmark() {
 
 	// an object size iterator that starts from 1 KB and doubles the size on every iteration
 	generatePayload := payloadSizeGenerator()
-	writeRunNumber := 0
 
-	// loop over every payload size
+	// loop over every payload size (we need to start at p := 1 because of the generatePayload() function)
 	for p := 1; p <= payloadsMax; p++ {
 		// get an object size from the iterator
 		payload := generatePayload()
@@ -347,9 +349,9 @@ func runBenchmark() {
 		for t := threadsMin; t <= threadsMax; t++ {
 			if operationToTest == "write" {
 				// must change run id to prevent collisions
-				for true {
-					writeRunNumber++
-					execTest(t, payload, writeRunNumber)
+				for {
+					numberOfRuns++
+					execTest(t, payload, numberOfRuns)
 					if !infiniteMode {
 						break
 					}
@@ -394,7 +396,7 @@ func runBenchmark() {
 	}
 }
 
-func execTest(threadCount int, payloadSize uint64, runNumber int) {
+func execTest(threadCount int, payloadSize uint64, runId int) {
 	// a channel to submit the test tasks
 	testTasks := make(chan int, threadCount)
 
@@ -402,25 +404,25 @@ func execTest(threadCount int, payloadSize uint64, runNumber int) {
 	results := make(chan sbmark.Latency, samples)
 
 	// create the workers for all the threads in this test
-	for w := 1; w <= threadCount; w++ {
-		go func(o int, tasks <-chan int, results chan<- sbmark.Latency) {
-			for range tasks {
+	for t := 1; t <= threadCount; t++ {
+		go func(threadId int, tasks <-chan int, results chan<- sbmark.Latency) {
+			for sampleId := range tasks {
 				setupClient() // reinit the connection so that we can measure the connection ramp up (DNS lookup, TCP handshake and SSL handshake).
 				var latency sbmark.Latency
 				if operationToTest == "write" {
 					// generate an object key from the sha hash of the current run id, thread index, and object size
-					key := generateObjectKey(string(runNumber), o, payloadSize)
+					key := generateObjectKey(string(runId), sampleId, payloadSize)
 					latency = measureWritePerformanceForSingleObject(key, payloadSize)
 				} else {
 					// generate an object key from the sha hash of the hostname, thread index, and object size
-					key := generateObjectKey(hostname, o, payloadSize)
+					key := generateObjectKey(hostname, sampleId, payloadSize)
 					latency = measureReadPerformanceForSingleObject(key, payloadSize)
 				}
 
 				// add the latency result to the results channel
 				results <- latency
 			}
-		}(w, testTasks, results)
+		}(t, testTasks, results)
 	}
 
 	// construct a new benchmark record
@@ -450,8 +452,8 @@ func execTest(threadCount int, payloadSize uint64, runNumber int) {
 	benchmarkTimer := time.Now()
 
 	// submit all the test tasks
-	for j := 1; j <= samples; j++ {
-		testTasks <- j
+	for s := 1; s <= samples; s++ {
+		testTasks <- s
 	}
 
 	// close the channel
@@ -555,7 +557,7 @@ func execTest(threadCount int, payloadSize uint64, runNumber int) {
 	// determine what to put in the first column of the results
 	c := record.Threads
 	if throttlingMode {
-		c = runNumber
+		c = numberOfRuns
 	}
 
 	// print the results to stdout
@@ -607,9 +609,8 @@ func measureReadPerformanceForSingleObject(key string, payloadSize uint64) sbmar
 }
 
 func measureWritePerformanceForSingleObject(key string, payloadSize uint64) sbmark.Latency {
-	var latency sbmark.Latency
 	i := 0
-	for true {
+	for {
 		// generate empty payload
 		payload := make([]byte, payloadSize)
 		if i > 0 {
@@ -632,7 +633,6 @@ func measureWritePerformanceForSingleObject(key string, payloadSize uint64) sbma
 			i++
 		}
 	}
-	return latency
 }
 
 // prints the table header for the test results
@@ -688,38 +688,41 @@ func cleanup() {
 	fmt.Printf("Deleting any objects uploaded from %s to %s\n", hostname, endpoint)
 
 	// create a progress bar
-	bar := progressbar.NewOptions(payloadsMax*threadsMax-1, progressbar.OptionSetRenderBlankState(true))
+	bar := progressbar.NewOptions(numberOfObjectsPerRun()-1, progressbar.OptionSetRenderBlankState(true))
 
 	// an object size iterator that starts from 1 KB and doubles the size on every iteration
 	generatePayload := payloadSizeGenerator()
 
-	runNumber := 0
-
-	// loop over every payload size
+	// loop over every payload size (we have to start at p := 1 because of the generatePayload() function)
 	for p := 1; p <= payloadsMax; p++ {
 		// get an object size from the iterator
 		payloadSize := generatePayload()
 
-		// loop over each possible thread to clean up objects from any previous test execution
-		for t := 1; t <= threadsMax; t++ {
+		// ignore payloads smaller than the min argument.
+		if p < payloadsMin {
+			continue
+		}
+
+		// loop over all samples
+		for s := 1; s <= samples; s++ {
 			// increment the progress bar
 			_ = bar.Add(1)
-			runNumber++
 			if operationToTest == "write" {
-				for n := 1; n <= t; n++ {
-					deleteSingleObject(string(n), t, payloadSize)
+				// loop over all runs
+				for r := 1; r <= numberOfRuns; r++ {
+					deleteSingleObject(string(r), s, payloadSize)
 				}
 			} else {
-				deleteSingleObject(hostname, t, payloadSize)
+				deleteSingleObject(hostname, s, payloadSize)
 			}
 		}
 	}
 	fmt.Print("\n\n")
 }
 
-func deleteSingleObject(runNumber string, threadIdx int, payloadSize uint64) {
-	// generate an object key from the sha hash of the hostname, thread index, and object size
-	key := generateObjectKey(runNumber, threadIdx, payloadSize)
+func deleteSingleObject(runIdOrHostname string, threadIdx int, payloadSize uint64) {
+	// generate an object key from the sha hash of the runIdOrHostname, thread index, and object size
+	key := generateObjectKey(runIdOrHostname, threadIdx, payloadSize)
 
 	// make a DeleteObject request
 	_, err := client.DeleteObject(bucketName, key)
@@ -728,6 +731,14 @@ func deleteSingleObject(runNumber string, threadIdx int, payloadSize uint64) {
 	if err != nil && !strings.HasPrefix(err.Error(), "NotFound: Not Found") {
 		panic("Failed to delete object: " + err.Error())
 	}
+}
+
+func numberOfObjectsPerRun() int {
+	return numberOfPayloads() * samples
+}
+
+func numberOfPayloads() int {
+	return payloadsMax - payloadsMin + 1
 }
 
 // gets the name of the host that executes the test.
