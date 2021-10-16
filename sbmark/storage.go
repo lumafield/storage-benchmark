@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// Specific Object API abstraction used to create benchmarks for
-type BenchmarkAPI interface {
+// Abstraction of storage operations (file, object, ...)
+type StorageInterface interface {
 	CreateBucket(bucketName string) (Latency, error)
 	HeadObject(bucket string, key string) (Latency, error)
 	PutObject(bucket string, key string, reader *bytes.Reader) (Latency, error)

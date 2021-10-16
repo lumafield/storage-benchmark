@@ -26,7 +26,7 @@ type S3ObjectClientConfig struct {
 	Insecure bool
 }
 
-func NewS3Client(obConfig *S3ObjectClientConfig) BenchmarkAPI {
+func NewS3Client(obConfig *S3ObjectClientConfig) StorageInterface {
 	// gets the AWS credentials from the default file or from the EC2 instance profile
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {

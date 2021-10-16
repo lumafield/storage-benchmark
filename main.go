@@ -68,7 +68,7 @@ var csvFileName string
 var jsonFileName string
 
 // the client to operate on objects. It's safe to use a single client across multiple go routines.
-var client sbmark.BenchmarkAPI
+var client sbmark.StorageInterface
 
 // operations might be "read" or "write. Default is "read".
 var operationToTest string
