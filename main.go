@@ -58,8 +58,8 @@ var threadsMax int
 // the number of samples to collect for each benchmark record
 var samples int
 
-// a test mode to find out when EC2 network throttling kicks in
-var throttlingMode bool
+// a test mode to find the maximum throughput for different object sizes
+var burstMode bool
 
 // if not empty, the results of the test are saved as .csv file
 var csvFileName string
@@ -69,6 +69,9 @@ var jsonFileName string
 
 // the client to operate on objects. It's safe to use a single client across multiple go routines.
 var client sbmark.StorageInterface
+
+// the mode of the testrun
+var mode sbmark.BenchmarkMode = &sbmark.LatencyMode{}
 
 // operations might be "read" or "write. Default is "read".
 var operationToTest string
@@ -87,7 +90,7 @@ var infiniteMode bool
 // The final report of this benchmark run
 var report sbmark.Report
 
-// For infinite or throttling mode a numberOfRuns is incremented for every loop.
+// For infinite or burst mode a numberOfRuns is incremented for every loop.
 var numberOfRuns int = 0
 
 // program entry point
@@ -117,12 +120,12 @@ func parseFlags() {
 	regionArg := flag.String("region", "", "Sets the AWS region to use for the S3 bucket. Only applies if the bucket doesn't already exist.")
 	endpointArg := flag.String("endpoint", "", "Sets the endpoint to use. Might be any URI.")
 	fullArg := flag.Bool("full", false, "Runs the full exhaustive test, and overrides the threads and payload arguments.")
-	throttlingModeArg := flag.Bool("throttling-mode", false, "Runs a continuous test to find out when EC2 network throttling kicks in.")
 	csvArg := flag.String("csv", "", "Saves the results as .csv file.")
 	jsonArg := flag.String("json", "", "Saves the results as .json file.")
 	operationArg := flag.String("operation", "read", "Specify if you want to measure 'read' or 'write'. Default is 'read'")
 	createBucketArg := flag.Bool("create-bucket", false, "create new bucket(default false)")
 	logPathArg := flag.String("log-path", "", "Specify the path of the log file. Default is 'currentDir'")
+	burstModeArg := flag.Bool("burst-mode", false, "Runs a continuous test to find the maximum throughput for different payload sizes.")
 	infiniteModeArg := flag.Bool("infinite-mode", false, "Run the tests in a infinite loop. 'Read' or 'Write' depends on the value of operation flag. Default is 'false'")
 
 	// parse the arguments and set all the global variables accordingly
@@ -175,14 +178,7 @@ func parseFlags() {
 		payloadsMax = 16 // 32 MB
 	}
 
-	if *throttlingModeArg {
-		// if running the network throttling test, the threads and payload arguments get overridden with these
-		threadsMin = 36
-		threadsMax = 36
-		payloadsMin = 15 // 16 MB
-		payloadsMax = 15 // 16 MB
-		throttlingMode = *throttlingModeArg
-	}
+	burstMode = *burstModeArg
 
 	if *infiniteModeArg {
 		if payloadsMax != payloadsMin {
@@ -315,44 +311,32 @@ func runBenchmark() {
 
 		if operationToTest != "write" {
 			// upload the objects for this run (if needed)
-			fmt.Printf("Uploading %d x %s objects\n", numberOfObjectsPerPayload(), byteFormat(float64(payload)))
+			fmt.Printf("Uploading %d x %s objects\n", numberOfObjectsPerPayload(), sbmark.ByteFormat(float64(payload)))
 			uploadBar := progressbar.NewOptions(samples-1, progressbar.OptionSetRenderBlankState(true))
 			uploadObjects(payload, uploadBar)
 			fmt.Print("\n\n")
 		}
 
 		// print the header for the benchmark of this object size
-		printHeader(payload)
+		mode.PrintHeader(payload, operationToTest)
 
 		// run a test per thread count and object size combination
 		for t := threadsMin; t <= threadsMax; t++ {
-			if operationToTest == "write" {
-				// must change run id to prevent collisions
-				for {
-					numberOfRuns++
-					execTest(t, payload, numberOfRuns)
-					if !infiniteMode {
-						break
-					}
-				}
-			} else {
-				// if throttling mode or infinite mode, loop forever
-				for n := 1; true; n++ {
-					execTest(t, payload, n)
-					if !throttlingMode && !infiniteMode {
-						break
-					}
+			for {
+				numberOfRuns++
+				execTest(t, payload, numberOfRuns)
+				if mode.IsFinished(numberOfRuns) {
+					break
 				}
 			}
 		}
 		fmt.Print("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+\n\n")
 
-		fmt.Printf("Deleting %d x %s objects\n", numberOfObjectsPerPayload(), byteFormat(float64(payload)))
+		fmt.Printf("Deleting %d x %s objects\n", numberOfObjectsPerPayload(), sbmark.ByteFormat(float64(payload)))
 		cleanupBar := progressbar.NewOptions(samples-1, progressbar.OptionSetRenderBlankState(true))
 		cleanupObjects(payload, cleanupBar)
 
 		fmt.Printf("\n\n\n\n")
-
 	}
 
 	// if the csv option is set, save the report as .csv
@@ -539,7 +523,7 @@ func execTest(threadCount int, payloadSize uint64, runId int) {
 
 	// determine what to put in the first column of the results
 	c := record.Threads
-	if throttlingMode {
+	if burstMode {
 		c = numberOfRuns
 	}
 
@@ -622,21 +606,6 @@ func measureWritePerformanceForSingleObject(key string, payloadSize uint64) sbma
 	return latency
 }
 
-// prints the table header for the test results
-func printHeader(objectSize uint64) {
-	// print the table header
-	fmt.Printf("Performance of operation '%s' with %s objects\n", operationToTest, byteFormat(float64(objectSize)))
-	fmt.Println("                           +-------------------------------------------------------------------------------------------------+----------------------------------+")
-	fmt.Println("                           |            Time to First Byte (ms)             |            Time to Last Byte (ms)              | Latency Distribution (avg in ms) |")
-	fmt.Println("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+")
-	if !throttlingMode {
-		fmt.Println("| Threads |     Throughput |  avg   min   p25   p50   p75   p90   p99   max |  avg   min   p25   p50   p75   p90   p99   max |    dns   tcp   tls   srv   rest  |")
-	} else {
-		fmt.Println("|       # |     Throughput |  avg   min   p25   p50   p75   p90   p99   max |  avg   min   p25   p50   p75   p90   p99   max |    dns   tcp   tls   srv   rest  |")
-	}
-	fmt.Println("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+")
-}
-
 // generates an object key from the sha hash of the hostname, thread index, and object size
 func generateObjectKey(host string, threadIndex int, payloadSize uint64) string {
 	var key string
@@ -712,14 +681,6 @@ func getHostname() string {
 
 func getTargetPath() string {
 	return fmt.Sprintf("%s/%s", endpoint, bucketName)
-}
-
-// formats bytes to KB or MB
-func byteFormat(bytes float64) string {
-	if bytes >= 1024*1024 {
-		return fmt.Sprintf("%.f MB", bytes/1024/1024)
-	}
-	return fmt.Sprintf("%.f KB", bytes/1024)
 }
 
 // returns an object size iterator, starting from 1 KB and double in size by each iteration
