@@ -104,19 +104,20 @@ func parseFlags() {
 	infiniteMode = *infiniteModeArg
 
 	ctx = &sbmark.BenchmarkContext{
-		Description:     *descriptionArg,
-		Mode:            &sbmark.LatencyMode{},
-		OperationToTest: *operationArg,
-		Endpoint:        *endpointArg,
-		Region:          *regionArg,
-		BucketName:      *bucketNameArg,
-		PayloadsMin:     *payloadsMinArg,
-		PayloadsMax:     *payloadsMaxArg,
-		ThreadsMin:      *threadsMinArg,
-		ThreadsMax:      *threadsMaxArg,
-		Samples:         *samplesArg,
-		NumberOfRuns:    0,
-		Hostname:        getHostname(),
+		Description:   *descriptionArg,
+		ModeName:      "LatencyMode",
+		Mode:          &sbmark.LatencyMode{},
+		OperationName: *operationArg,
+		Endpoint:      *endpointArg,
+		Region:        *regionArg,
+		Path:          *bucketNameArg,
+		PayloadsMin:   *payloadsMinArg,
+		PayloadsMax:   *payloadsMaxArg,
+		ThreadsMin:    *threadsMinArg,
+		ThreadsMax:    *threadsMaxArg,
+		Samples:       *samplesArg,
+		NumberOfRuns:  0,
+		Hostname:      getHostname(),
 	}
 
 	err := ctx.Start()
@@ -138,7 +139,7 @@ func setupLogger() {
 func createBenchmarkBucket() {
 	fmt.Print("\n--- SETUP --------------------------------------------------------------------------------------------------------------------\n\n")
 
-	_, err := ctx.Client.CreateBucket(ctx.BucketName)
+	_, err := ctx.Client.CreateBucket(ctx.Path)
 
 	fmt.Printf("Created target path %s\n\n", getTargetPath())
 
@@ -159,7 +160,7 @@ func uploadObjects(payloadSize uint64, bar *progressbar.ProgressBar) {
 		key := generateObjectKey(ctx.Hostname, s, payloadSize)
 
 		// do a HeadObject request to avoid uploading the object if it already exists from a previous test run
-		_, err := ctx.Client.HeadObject(ctx.BucketName, key)
+		_, err := ctx.Client.HeadObject(ctx.Path, key)
 
 		// if no error, then the object exists, so skip this one
 		if err == nil {
@@ -175,7 +176,7 @@ func uploadObjects(payloadSize uint64, bar *progressbar.ProgressBar) {
 		reader := bytes.NewReader(make([]byte, payloadSize))
 
 		// do a PutObject request to create the object
-		_, err = ctx.Client.PutObject(ctx.BucketName, key, reader)
+		_, err = ctx.Client.PutObject(ctx.Path, key, reader)
 
 		// if the put fails, exit
 		if err != nil {
@@ -190,13 +191,9 @@ func runBenchmark() {
 
 	// Init the final report
 	ctx.Report = sbmark.Report{
-		Description: ctx.Description,
 		ClientEnv:   fmt.Sprintf("Application: %s, Host: %s, OS: %s", filepath.Base(os.Args[0]), getHostname(), runtime.GOOS),
 		ServerEnv:   ctx.Endpoint, // How can we get some informations about the ServerEnv? Or should this be a CLI param?
-		Endpoint:    ctx.Endpoint,
-		Path:        ctx.BucketName,
 		DateTimeUTC: time.Now().UTC().String(),
-		Samples:     ctx.Samples,
 		Records:     []sbmark.Record{},
 	}
 
@@ -213,7 +210,7 @@ func runBenchmark() {
 			continue
 		}
 
-		if ctx.OperationToTest != "write" {
+		if ctx.OperationName != "write" {
 			// upload the objects for this run (if needed)
 			fmt.Printf("Uploading %d x %s objects\n", ctx.NumberOfObjectsPerPayload(), sbmark.ByteFormat(float64(payload)))
 			uploadBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
@@ -222,7 +219,7 @@ func runBenchmark() {
 		}
 
 		// print the header for the benchmark of this object size
-		ctx.Mode.PrintHeader(payload, ctx.OperationToTest)
+		ctx.Mode.PrintHeader(payload, ctx.OperationName)
 
 		// run a test per thread count and object size combination
 		for t := ctx.ThreadsMin; t <= ctx.ThreadsMax; t++ {
@@ -258,7 +255,7 @@ func runBenchmark() {
 
 	// if the json option is set, save the report as .json
 	if jsonFileName != "" {
-		jsonReport, err := sbmark.ToJson(ctx.Report)
+		jsonReport, err := sbmark.ToJson(ctx)
 		if err != nil {
 			panic("Failed to create .json output: " + err.Error())
 		}
@@ -282,7 +279,7 @@ func execTest(threadCount int, payloadSize uint64, runId int) {
 		go func(threadId int, tasks <-chan int, results chan<- sbmark.Latency) {
 			for sampleId := range tasks {
 				var latency sbmark.Latency
-				if ctx.OperationToTest == "write" {
+				if ctx.OperationName == "write" {
 					key := generateObjectKey(string(runId), sampleId, payloadSize)
 					latency = measureWritePerformanceForSingleObject(key, payloadSize)
 				} else {
@@ -308,7 +305,7 @@ func execTest(threadCount int, payloadSize uint64, runId int) {
 
 	record := sbmark.Record{
 		ObjectSizeBytes:  0,
-		Operation:        ctx.OperationToTest,
+		Operation:        ctx.OperationName,
 		Threads:          threadCount,
 		TimeToFirstByte:  make(map[string]float64),
 		TimeToLastByte:   make(map[string]float64),
@@ -447,7 +444,7 @@ func measureReadPerformanceForSingleObject(key string, payloadSize uint64) sbmar
 	latencyTimer := time.Now()
 
 	// do the GetObject request
-	latency, dataStream, err := ctx.Client.GetObject(ctx.BucketName, key)
+	latency, dataStream, err := ctx.Client.GetObject(ctx.Path, key)
 
 	// if a request fails, exit
 	if err != nil {
@@ -497,7 +494,7 @@ func measureWritePerformanceForSingleObject(key string, payloadSize uint64) sbma
 	latencyTimer := time.Now()
 
 	// do a PutObject request to create the object and init the Latency struct
-	latency, err := ctx.Client.PutObject(ctx.BucketName, key, reader)
+	latency, err := ctx.Client.PutObject(ctx.Path, key, reader)
 
 	// measure the last byte latency
 	latency.LastByte = time.Now().Sub(latencyTimer)
@@ -515,7 +512,7 @@ func generateObjectKey(host string, threadIndex int, payloadSize uint64) string 
 	var key string
 	keyHash := sha1.Sum([]byte(fmt.Sprintf("%s-%03d-%012d", host, threadIndex, payloadSize)))
 	folder := strconv.Itoa(int(payloadSize))
-	if ctx.OperationToTest == "write" && infiniteMode {
+	if ctx.OperationName == "write" && infiniteMode {
 		key = folder +
 			"/" + generateRandomString(threadIndex) +
 			"/" + generateRandomString(threadIndex) +
@@ -542,7 +539,7 @@ func cleanupObjects(payloadSize uint64, bar *progressbar.ProgressBar) {
 	for s := 1; s <= ctx.Samples; s++ {
 		// increment the progress bar
 		_ = bar.Add(1)
-		if ctx.OperationToTest == "write" {
+		if ctx.OperationName == "write" {
 			// loop over all runs
 			for r := 1; r <= ctx.NumberOfRuns; r++ {
 				deleteSingleObject(string(r), s, payloadSize)
@@ -558,7 +555,7 @@ func deleteSingleObject(runIdOrHostname string, threadIdx int, payloadSize uint6
 	key := generateObjectKey(runIdOrHostname, threadIdx, payloadSize)
 
 	// make a DeleteObject request
-	_, err := ctx.Client.DeleteObject(ctx.BucketName, key)
+	_, err := ctx.Client.DeleteObject(ctx.Path, key)
 
 	// if the object doesn't exist, ignore the error
 	if err != nil && !strings.HasPrefix(err.Error(), "NotFound: Not Found") {
@@ -576,7 +573,7 @@ func getHostname() string {
 }
 
 func getTargetPath() string {
-	return fmt.Sprintf("%s/%s", ctx.Endpoint, ctx.BucketName)
+	return fmt.Sprintf("%s/%s", ctx.Endpoint, ctx.Path)
 }
 
 // returns an object size iterator, starting from 1 KB and double in size by each iteration

@@ -2,6 +2,6 @@ package sbmark
 
 import "encoding/json"
 
-func ToJson(report Report) ([]byte, error) {
-	return json.MarshalIndent(report, "", "  ")
+func ToJson(ctx *BenchmarkContext) ([]byte, error) {
+	return json.MarshalIndent(ctx, "", "  ")
 }

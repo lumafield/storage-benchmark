@@ -21,44 +21,25 @@ type BenchmarkMode interface {
 }
 
 type BenchmarkContext struct {
-	// an optional description of the test run. It will be added to the .json report.
-	Description string
+	Description   string `json:"description"`  // An optional description that helps to identify the test run
+	Hostname      string `json:"hostname"`     // the hostname where this benchmark is executed from
+	Region        string `json:"region"`       // S3 region
+	Endpoint      string `json:"endpoint"`     // the endpoint URL or path where the operations are directed to
+	Path          string `json:"path"`         // the path where to operations are executed on
+	PayloadsMin   int    `json:"payloads_min"` // the minimum payload to test (powers of 2)
+	PayloadsMax   int    `json:"payloads_max"` // the maximum payload to test (powers of 2)
+	ThreadsMin    int    `json:"threads_min"`  // the mininum number of threads to test
+	ThreadsMax    int    `json:"threads_max"`  // the maxiumu number of threads to test
+	Samples       int    `json:"samples"`      // the number of samples to collect for each benchmark record
+	OperationName string `json:"operation"`    // operations might be "read" or "write. Default is "read".
+	ModeName      string `json:"mode"`         // latency, burst, ...
+	Report        Report `json:"report"`       // The final report of this benchmark run
 
-	// the hostname where this benchmark is executed from
-	Hostname string
-
-	// the region if available.
-	Region string
-
-	// the endpoint URL or path if applicable
-	Endpoint string
-
-	// the script will automatically create a bucket to use for the test, and it tries to get a unique bucket name
-	// by generating a sha hash of the hostname
-	BucketName string
-
-	// the min and max object sizes to test - 1 = 1 KB, and the size doubles with every increment
-	PayloadsMin int
-	PayloadsMax int
-
-	// the min and max thread count to use in the test
-	ThreadsMin int
-	ThreadsMax int
-
-	// the number of samples to collect for each benchmark record
-	Samples int
+	// the BenchmarkMode instance of the testrun (corresponds to the ModeName)
+	Mode BenchmarkMode
 
 	// the client to operate on objects. It's safe to use a single client across multiple go routines.
 	Client StorageInterface
-
-	// the mode of the testrun
-	Mode BenchmarkMode
-
-	// operations might be "read" or "write. Default is "read".
-	OperationToTest string
-
-	// The final report of this benchmark run
-	Report Report
 
 	// For infinite or burst mode a numberOfRuns is incremented for every loop.
 	NumberOfRuns int
@@ -93,7 +74,7 @@ func (ctx *BenchmarkContext) setupClient() {
 
 func (ctx *BenchmarkContext) Validate() error {
 
-	if ctx.BucketName == "" {
+	if ctx.Path == "" {
 		return errors.New("sbmark.BenchmarkContext: BucketName may not be empty")
 	}
 
@@ -101,8 +82,8 @@ func (ctx *BenchmarkContext) Validate() error {
 		return fmt.Errorf("sbmark.BenchmarkContext: Minimum number of samples must be '%d'", samplesMin)
 	}
 
-	if ctx.OperationToTest != "read" && ctx.OperationToTest != "write" {
-		return fmt.Errorf("sbmark.BenchmarkContext: Unknown operation '%s'. Please use 'read' or 'write'", ctx.OperationToTest)
+	if ctx.OperationName != "read" && ctx.OperationName != "write" {
+		return fmt.Errorf("sbmark.BenchmarkContext: Unknown operation '%s'. Please use 'read' or 'write'", ctx.OperationName)
 	}
 
 	if ctx.PayloadsMin > ctx.PayloadsMax {

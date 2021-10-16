@@ -1,13 +1,9 @@
 package sbmark
 
 type Report struct {
-	Description string   `json:"description"` // General discription of the test run
-	ClientEnv   string   `json:"client_env"`  // Description of the environment from which the benchmark has been executed.
-	ServerEnv   string   `json:"server_env"`  // Description of the environment of the test target.
-	Endpoint    string   `json:"endpoint"`
-	Path        string   `json:"path"`
+	ClientEnv   string   `json:"client_env"` // Description of the environment from which the benchmark has been executed.
+	ServerEnv   string   `json:"server_env"` // Description of the environment of the test target.
 	DateTimeUTC string   `json:"datetime_utc"`
-	Samples     int      `json:"samples"` // Number of operations executed per record
 	Records     []Record `json:"records"`
 }
 
