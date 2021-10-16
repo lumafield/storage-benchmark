@@ -93,12 +93,10 @@ var numberOfRuns int = 0
 // program entry point
 func main() {
 	parseFlags()
-
 	if showVersion {
 		displayVersion()
 		return
 	}
-
 	setupLogger()
 	setupClient()
 	if createBucket {
