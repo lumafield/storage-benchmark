@@ -1,9 +1,13 @@
 package sbmark
 
 import (
+	"crypto/sha1"
 	"errors"
 	"fmt"
+	"math/rand"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const samplesMin = 4 // to calculate the 0.25 percentile we need at least 4 samples of each run
@@ -18,6 +22,12 @@ const (
 type BenchmarkMode interface {
 	IsFinished(numberOfRuns int) bool
 	PrintHeader(objectSize uint64, operationToTest string)
+}
+
+type BenchmarkOperation interface {
+	EnsureTestdata(ctx *BenchmarkContext, payloadSize uint64)
+	Execute(ctx *BenchmarkContext, sampleId int, payloadSize uint64) Latency
+	CleanupTestdata(ctx *BenchmarkContext)
 }
 
 type BenchmarkContext struct {
@@ -38,6 +48,9 @@ type BenchmarkContext struct {
 	// the BenchmarkMode instance of the testrun (corresponds to the ModeName)
 	Mode BenchmarkMode
 
+	// The BenchmarkOperation instance of this testrun (corresponds to the OperationName)
+	Operation BenchmarkOperation
+
 	// the client to operate on objects. It's safe to use a single client across multiple go routines.
 	Client StorageInterface
 
@@ -54,6 +67,7 @@ func (ctx *BenchmarkContext) Start() error {
 		return err
 	}
 	ctx.setupClient()
+	ctx.setupOperation()
 	ctx.state = started
 	return nil
 }
@@ -69,6 +83,14 @@ func (ctx *BenchmarkContext) setupClient() {
 			Endpoint: ctx.Endpoint,
 			Insecure: true,
 		})
+	}
+}
+
+func (ctx *BenchmarkContext) setupOperation() {
+	if ctx.OperationName == "write" {
+		ctx.Operation = &OperationWrite{}
+	} else {
+		ctx.Operation = &OperationRead{}
 	}
 }
 
@@ -111,4 +133,32 @@ func ByteFormat(bytes float64) string {
 		return fmt.Sprintf("%.f MB", bytes/1024/1024)
 	}
 	return fmt.Sprintf("%.f KB", bytes/1024)
+}
+
+// generates an object key from the sha hash of a string, the thread index, and the object size
+func generateObjectKey(threadIndex int, payloadSize uint64) string {
+	var key string
+	keyHash := sha1.Sum([]byte(fmt.Sprintf("%03d-%012d", threadIndex, payloadSize)))
+	folder := strconv.Itoa(int(payloadSize))
+	/*if ctx.OperationName == "write" && infiniteMode {
+		key = folder +
+			"/" + generateRandomString(threadIndex) +
+			"/" + generateRandomString(threadIndex) +
+			"/" + (fmt.Sprintf("%x", keyHash))
+	} else {
+		key = folder + "/" + (fmt.Sprintf("%x", keyHash))
+	}*/
+	key = folder + "/" + (fmt.Sprintf("%x", keyHash))
+	return key
+}
+
+func GenerateRandomString(seed int) string {
+	rand.Seed(time.Now().UnixNano())
+	chars := []rune("1234")
+	length := 4
+	var b strings.Builder
+	for i := 0; i < length; i++ {
+		b.WriteRune(chars[rand.Intn(len(chars))])
+	}
+	return b.String()
 }

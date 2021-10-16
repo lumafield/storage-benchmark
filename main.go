@@ -1,23 +1,18 @@
 package main
 
 import (
-	"bytes"
 	"crypto/sha1"
 	"flag"
 	"fmt"
-	"io"
 	log2 "log"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
 	"github.com/iternity-dotcom/storage-benchmark/sbmark"
-	"github.com/schollz/progressbar/v2"
 )
 
 const bucketNamePrefix = "storage-benchmark"
@@ -149,42 +144,6 @@ func createBenchmarkBucket() {
 	}
 }
 
-func uploadObjects(payloadSize uint64, bar *progressbar.ProgressBar) {
-
-	// create an object for every thread, so that different threads don's download the same object
-	for s := 1; s <= ctx.Samples; s++ {
-		// increment the progress bar for each object
-		_ = bar.Add(1)
-
-		// generate an object key from the sha hash of the hostname, thread index, and object size
-		key := generateObjectKey(ctx.Hostname, s, payloadSize)
-
-		// do a HeadObject request to avoid uploading the object if it already exists from a previous test run
-		_, err := ctx.Client.HeadObject(ctx.Path, key)
-
-		// if no error, then the object exists, so skip this one
-		if err == nil {
-			continue
-		}
-
-		// if other error, exit
-		if err != nil && !strings.Contains(err.Error(), "NotFound:") {
-			panic("Failed to head object: " + err.Error())
-		}
-
-		// generate reader
-		reader := bytes.NewReader(make([]byte, payloadSize))
-
-		// do a PutObject request to create the object
-		_, err = ctx.Client.PutObject(ctx.Path, key, reader)
-
-		// if the put fails, exit
-		if err != nil {
-			panic("Failed to put object: " + err.Error())
-		}
-	}
-}
-
 func runBenchmark() {
 
 	fmt.Print("\n--- BENCHMARK ---------------------------------------------------------------------------------------------------------------------------------------------------\n\n")
@@ -203,39 +162,36 @@ func runBenchmark() {
 	// loop over every payload size (we need to start at p := 1 because of the generatePayload() function)
 	for p := 1; p <= ctx.PayloadsMax; p++ {
 		// get an object size from the iterator
-		payload := generatePayload()
+		payloadSize := generatePayload()
 
 		// ignore payloads smaller than the min argument
 		if p < ctx.PayloadsMin {
 			continue
 		}
 
-		if ctx.OperationName != "write" {
-			// upload the objects for this run (if needed)
-			fmt.Printf("Uploading %d x %s objects\n", ctx.NumberOfObjectsPerPayload(), sbmark.ByteFormat(float64(payload)))
-			uploadBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
-			uploadObjects(payload, uploadBar)
-			fmt.Print("\n\n")
-		}
+		// Prepare the payload for the following tests
+		ctx.Operation.EnsureTestdata(ctx, payloadSize)
 
 		// print the header for the benchmark of this object size
-		ctx.Mode.PrintHeader(payload, ctx.OperationName)
+		ctx.Mode.PrintHeader(payloadSize, ctx.OperationName)
 
 		// run a test per thread count and object size combination
 		for t := ctx.ThreadsMin; t <= ctx.ThreadsMax; t++ {
 			for {
 				ctx.NumberOfRuns++
-				execTest(t, payload, ctx.NumberOfRuns)
+				execTest(t, payloadSize, ctx.NumberOfRuns)
 				if ctx.Mode.IsFinished(ctx.NumberOfRuns) {
 					break
 				}
 			}
 		}
+
 		fmt.Print("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+\n\n")
 
-		fmt.Printf("Deleting %d x %s objects\n", ctx.NumberOfObjectsPerPayload(), sbmark.ByteFormat(float64(payload)))
-		cleanupBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
-		cleanupObjects(payload, cleanupBar)
+		fmt.Printf("Deleting %d x %s objects\n", ctx.NumberOfObjectsPerPayload(), sbmark.ByteFormat(float64(payloadSize)))
+		//cleanupBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
+		//cleanupObjects(payload, cleanupBar)
+		ctx.Operation.CleanupTestdata(ctx)
 
 		fmt.Printf("\n\n\n\n")
 	}
@@ -278,17 +234,8 @@ func execTest(threadCount int, payloadSize uint64, runId int) {
 	for t := 1; t <= threadCount; t++ {
 		go func(threadId int, tasks <-chan int, results chan<- sbmark.Latency) {
 			for sampleId := range tasks {
-				var latency sbmark.Latency
-				if ctx.OperationName == "write" {
-					key := generateObjectKey(string(runId), sampleId, payloadSize)
-					latency = measureWritePerformanceForSingleObject(key, payloadSize)
-				} else {
-					key := generateObjectKey(ctx.Hostname, sampleId, payloadSize)
-					latency = measureReadPerformanceForSingleObject(key, payloadSize)
-				}
-
-				// add the latency result to the results channel
-				results <- latency
+				// execute operation and add the latency result to the results channel
+				results <- ctx.Operation.Execute(ctx, sampleId, payloadSize)
 			}
 		}(t, testTasks, results)
 	}
@@ -437,130 +384,6 @@ func execTest(threadCount int, payloadSize uint64, runId int) {
 
 	// append the record to the report
 	ctx.Report.Records = append(ctx.Report.Records, record)
-}
-
-func measureReadPerformanceForSingleObject(key string, payloadSize uint64) sbmark.Latency {
-	// start the timer to measure the first byte and last byte latencies
-	latencyTimer := time.Now()
-
-	// do the GetObject request
-	latency, dataStream, err := ctx.Client.GetObject(ctx.Path, key)
-
-	// if a request fails, exit
-	if err != nil {
-		panic("Failed to get object: " + err.Error())
-	}
-
-	// measure the first byte latency
-	latency.FirstByte = time.Now().Sub(latencyTimer)
-
-	// create a buffer to copy the object body to
-	var buf = make([]byte, payloadSize)
-
-	// read the object body into the buffer
-	size := 0
-	for {
-		n, err := dataStream.Read(buf)
-
-		size += n
-
-		if err == io.EOF {
-			break
-		}
-
-		// if the streaming fails, exit
-		if err != nil {
-			panic("Error reading object body: " + err.Error())
-		}
-	}
-
-	err = dataStream.Close()
-
-	// measure the last byte latency
-	latency.LastByte = time.Now().Sub(latencyTimer)
-
-	// if the datastream can't be closed, exit
-	if err != nil {
-		panic("Error closing the datastream: " + err.Error())
-	}
-
-	return latency
-}
-
-func measureWritePerformanceForSingleObject(key string, payloadSize uint64) sbmark.Latency {
-	reader := bytes.NewReader(make([]byte, payloadSize))
-
-	// start the timer
-	latencyTimer := time.Now()
-
-	// do a PutObject request to create the object and init the Latency struct
-	latency, err := ctx.Client.PutObject(ctx.Path, key, reader)
-
-	// measure the last byte latency
-	latency.LastByte = time.Now().Sub(latencyTimer)
-
-	// if a request fails, exit
-	if err != nil {
-		panic("Failed to put object: " + err.Error())
-	}
-
-	return latency
-}
-
-// generates an object key from the sha hash of the hostname, thread index, and object size
-func generateObjectKey(host string, threadIndex int, payloadSize uint64) string {
-	var key string
-	keyHash := sha1.Sum([]byte(fmt.Sprintf("%s-%03d-%012d", host, threadIndex, payloadSize)))
-	folder := strconv.Itoa(int(payloadSize))
-	if ctx.OperationName == "write" && infiniteMode {
-		key = folder +
-			"/" + generateRandomString(threadIndex) +
-			"/" + generateRandomString(threadIndex) +
-			"/" + (fmt.Sprintf("%x", keyHash))
-	} else {
-		key = folder + "/" + (fmt.Sprintf("%x", keyHash))
-	}
-	return key
-}
-
-func generateRandomString(seed int) string {
-	rand.Seed(time.Now().UnixNano())
-	chars := []rune("1234")
-	length := 4
-	var b strings.Builder
-	for i := 0; i < length; i++ {
-		b.WriteRune(chars[rand.Intn(len(chars))])
-	}
-	return b.String()
-}
-
-func cleanupObjects(payloadSize uint64, bar *progressbar.ProgressBar) {
-	// loop over all samples
-	for s := 1; s <= ctx.Samples; s++ {
-		// increment the progress bar
-		_ = bar.Add(1)
-		if ctx.OperationName == "write" {
-			// loop over all runs
-			for r := 1; r <= ctx.NumberOfRuns; r++ {
-				deleteSingleObject(string(r), s, payloadSize)
-			}
-		} else {
-			deleteSingleObject(ctx.Hostname, s, payloadSize)
-		}
-	}
-}
-
-func deleteSingleObject(runIdOrHostname string, threadIdx int, payloadSize uint64) {
-	// generate an object key from the sha hash of the runIdOrHostname, thread index, and object size
-	key := generateObjectKey(runIdOrHostname, threadIdx, payloadSize)
-
-	// make a DeleteObject request
-	_, err := ctx.Client.DeleteObject(ctx.Path, key)
-
-	// if the object doesn't exist, ignore the error
-	if err != nil && !strings.HasPrefix(err.Error(), "NotFound: Not Found") {
-		panic("Failed to delete object: " + err.Error())
-	}
 }
 
 // gets the name of the host that executes the test.
