@@ -11,15 +11,12 @@ type OperationRead struct {
 	keys []string
 }
 
-func (op *OperationRead) EnsureTestdata(ctx *BenchmarkContext, payloadSize uint64) {
-	// upload the objects for this run (if needed)
-	//fmt.Printf("Uploading %d x %s objects\n", ctx.NumberOfObjectsPerPayload(), ByteFormat(float64(payload)))
-	//uploadBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
+func (op *OperationRead) EnsureTestdata(ctx *BenchmarkContext, payloadSize uint64, ticker Ticker) {
 
 	// create an object for every thread, so that different threads don'sampleId download the same object
 	for sampleId := 1; sampleId <= ctx.Samples; sampleId++ {
 		// increment the progress bar for each object
-		//_ = bar.Add(1)
+		ticker.Add(1)
 
 		// generate an object key from the sha hash of the hostname, thread index, and object size
 		key := generateObjectKey(sampleId, payloadSize)
@@ -102,8 +99,9 @@ func (op *OperationRead) Execute(ctx *BenchmarkContext, sampleId int, payloadSiz
 	return latency
 }
 
-func (op *OperationRead) CleanupTestdata(ctx *BenchmarkContext) {
+func (op *OperationRead) CleanupTestdata(ctx *BenchmarkContext, ticker Ticker) {
 	for _, key := range op.keys {
+		ticker.Add(1)
 		ctx.Client.DeleteObject(ctx.Path, key)
 	}
 }

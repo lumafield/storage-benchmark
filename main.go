@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/iternity-dotcom/storage-benchmark/sbmark"
+	"github.com/schollz/progressbar/v2"
 )
 
 const bucketNamePrefix = "storage-benchmark"
@@ -38,9 +39,6 @@ var createBucket bool
 // path for log file
 var logPath string
 
-// add a logging
-var logger *log2.Logger
-
 // a test mode to find the maximum throughput for different object sizes
 var burstMode bool
 
@@ -57,7 +55,6 @@ func main() {
 		displayVersion()
 		return
 	}
-	setupLogger()
 	if createBucket {
 		createBenchmarkBucket()
 	}
@@ -113,6 +110,7 @@ func parseFlags() {
 		Samples:       *samplesArg,
 		NumberOfRuns:  0,
 		Hostname:      getHostname(),
+		Logger:        createLogger(),
 	}
 
 	err := ctx.Start()
@@ -126,9 +124,9 @@ func displayVersion() {
 	fmt.Printf("UTC Build Time: %s", buildstamp)
 }
 
-func setupLogger() {
+func createLogger() *log2.Logger {
 	file, _ := os.OpenFile(filepath.FromSlash(logPath+"/")+"storage-benchmark.log", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
-	logger = log2.New(file, "storage-benchmark", log2.Ldate+log2.Ltime+log2.Lshortfile+log2.Lmsgprefix)
+	return log2.New(file, "storage-benchmark", log2.Ldate+log2.Ltime+log2.Lshortfile+log2.Lmsgprefix)
 }
 
 func createBenchmarkBucket() {
@@ -170,7 +168,11 @@ func runBenchmark() {
 		}
 
 		// Prepare the payload for the following tests
-		ctx.Operation.EnsureTestdata(ctx, payloadSize)
+		fmt.Printf("Preparing benchmark for %s objects\n", sbmark.ByteFormat(float64(payloadSize)))
+		uploadBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
+		ctx.Operation.EnsureTestdata(ctx, payloadSize, uploadBar)
+
+		fmt.Printf("\n\n")
 
 		// print the header for the benchmark of this object size
 		ctx.Mode.PrintHeader(payloadSize, ctx.OperationName)
@@ -189,11 +191,10 @@ func runBenchmark() {
 		fmt.Print("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+\n\n")
 
 		fmt.Printf("Deleting %d x %s objects\n", ctx.NumberOfObjectsPerPayload(), sbmark.ByteFormat(float64(payloadSize)))
-		//cleanupBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
-		//cleanupObjects(payload, cleanupBar)
-		ctx.Operation.CleanupTestdata(ctx)
+		cleanupBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
+		ctx.Operation.CleanupTestdata(ctx, cleanupBar)
 
-		fmt.Printf("\n\n")
+		fmt.Printf("\n\n\n\n")
 	}
 
 	// if the csv option is set, save the report as .csv

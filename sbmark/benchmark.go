@@ -4,6 +4,7 @@ import (
 	"crypto/sha1"
 	"errors"
 	"fmt"
+	log2 "log"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -19,15 +20,19 @@ const (
 	started
 )
 
+type Ticker interface {
+	Add(ticks int) error
+}
+
 type BenchmarkMode interface {
 	IsFinished(numberOfRuns int) bool
 	PrintHeader(objectSize uint64, operationToTest string)
 }
 
 type BenchmarkOperation interface {
-	EnsureTestdata(ctx *BenchmarkContext, payloadSize uint64)
+	EnsureTestdata(ctx *BenchmarkContext, payloadSize uint64, ticker Ticker)
 	Execute(ctx *BenchmarkContext, sampleId int, payloadSize uint64) Latency
-	CleanupTestdata(ctx *BenchmarkContext)
+	CleanupTestdata(ctx *BenchmarkContext, ticker Ticker)
 }
 
 type BenchmarkContext struct {
@@ -59,6 +64,9 @@ type BenchmarkContext struct {
 
 	// The state of this context (started or stopped)
 	state state
+
+	// The logger can be used from anywhere to log stuff
+	Logger *log2.Logger
 }
 
 func (ctx *BenchmarkContext) Start() error {

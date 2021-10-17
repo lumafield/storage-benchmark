@@ -9,8 +9,9 @@ type OperationWrite struct {
 	keys []string
 }
 
-func (op *OperationWrite) EnsureTestdata(ctx *BenchmarkContext, payloadSite uint64) {
+func (op *OperationWrite) EnsureTestdata(ctx *BenchmarkContext, payloadSite uint64, ticker Ticker) {
 	// Nothing to prepare for write operations
+	ticker.Add(ctx.Samples - 1)
 }
 
 func (op *OperationWrite) Execute(ctx *BenchmarkContext, sampleId int, payloadSize uint64) Latency {
@@ -36,8 +37,9 @@ func (op *OperationWrite) Execute(ctx *BenchmarkContext, sampleId int, payloadSi
 	return latency
 }
 
-func (op *OperationWrite) CleanupTestdata(ctx *BenchmarkContext) {
+func (op *OperationWrite) CleanupTestdata(ctx *BenchmarkContext, ticker Ticker) {
 	for _, key := range op.keys {
+		ticker.Add(1)
 		ctx.Client.DeleteObject(ctx.Path, key)
 	}
 }

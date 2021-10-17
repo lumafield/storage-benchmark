@@ -11,7 +11,7 @@ func (m *LatencyMode) IsFinished(numberOfRuns int) bool {
 
 func (m *LatencyMode) PrintHeader(objectSize uint64, operationToTest string) {
 	// prints the table header for the test results
-	fmt.Printf("Performance of operation '%s' with %s objects\n", operationToTest, ByteFormat(float64(objectSize)))
+	fmt.Printf("Latencies for operation '%s' of %s objects\n", operationToTest, ByteFormat(float64(objectSize)))
 	fmt.Println("                           +-------------------------------------------------------------------------------------------------+----------------------------------+")
 	fmt.Println("                           |            Time to First Byte (ms)             |            Time to Last Byte (ms)              | Latency Distribution (avg in ms) |")
 	fmt.Println("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+")
