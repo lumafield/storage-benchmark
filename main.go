@@ -193,7 +193,7 @@ func runBenchmark() {
 		//cleanupObjects(payload, cleanupBar)
 		ctx.Operation.CleanupTestdata(ctx)
 
-		fmt.Printf("\n\n\n\n")
+		fmt.Printf("\n\n")
 	}
 
 	// if the csv option is set, save the report as .csv
@@ -289,7 +289,7 @@ func execTest(threadCount int, payloadSize uint64, runId int) {
 	}
 
 	// stop the timer for this benchmark
-	totalTime := time.Now().Sub(benchmarkTimer)
+	totalTime := time.Since(benchmarkTimer)
 	record.DurationSeconds = totalTime.Seconds()
 
 	// calculate the summary statistics for the first byte latencies

@@ -24,7 +24,7 @@ func (op *OperationWrite) Execute(ctx *BenchmarkContext, sampleId int, payloadSi
 	latency, err := ctx.Client.PutObject(ctx.Path, key, reader)
 
 	// measure the last byte latency
-	latency.LastByte = time.Now().Sub(latencyTimer)
+	latency.LastByte = time.Since(latencyTimer)
 
 	// if a request fails, exit
 	if err != nil {

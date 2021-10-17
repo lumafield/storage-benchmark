@@ -67,7 +67,7 @@ func (op *OperationRead) Execute(ctx *BenchmarkContext, sampleId int, payloadSiz
 	}
 
 	// measure the first byte latency
-	latency.FirstByte = time.Now().Sub(latencyTimer)
+	latency.FirstByte = time.Since(latencyTimer)
 
 	// create a buffer to copy the object body to
 	var buf = make([]byte, payloadSize)
@@ -92,7 +92,7 @@ func (op *OperationRead) Execute(ctx *BenchmarkContext, sampleId int, payloadSiz
 	err = dataStream.Close()
 
 	// measure the last byte latency
-	latency.LastByte = time.Now().Sub(latencyTimer)
+	latency.LastByte = time.Since(latencyTimer)
 
 	// if the datastream can't be closed, exit
 	if err != nil {
