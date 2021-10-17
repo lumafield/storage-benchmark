@@ -25,8 +25,11 @@ type Ticker interface {
 }
 
 type BenchmarkMode interface {
-	IsFinished(numberOfRuns int) bool
 	PrintHeader(objectSize uint64, operationToTest string)
+	PrintRecord(record Record)
+	PrintFooter()
+	ExecuteBenchmark(ctx *BenchmarkContext, payloadSize uint64)
+	IsFinished(numberOfRuns int) bool
 }
 
 type BenchmarkOperation interface {
