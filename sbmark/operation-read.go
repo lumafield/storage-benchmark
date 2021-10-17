@@ -46,8 +46,6 @@ func (op *OperationRead) EnsureTestdata(ctx *BenchmarkContext, payloadSize uint6
 			panic("Failed to put object: " + err.Error())
 		}
 	}
-
-	//fmt.Print("\n\n")
 }
 
 func (op *OperationRead) Execute(ctx *BenchmarkContext, sampleId int, payloadSize uint64) Latency {
