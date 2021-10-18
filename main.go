@@ -19,9 +19,9 @@ const bucketNamePrefix = "storage-benchmark"
 
 var defaultBucketName = fmt.Sprintf("%s-%x", bucketNamePrefix, sha1.Sum([]byte(getHostname())))
 
-// use go build -ldflags "-X main.buildstamp=`date -u '+%Y-%m-%d_%I:%M:%S%p'` -X main.githash=`git rev-parse HEAD`"
-var buildstamp = "No build stamp provided"
-var githash = "No git hash provided"
+// use go build -ldflags "-X main.buildstamp=`date -u '+%Y-%m-%dT%I:%M:%S'` -X main.githash=`git rev-parse HEAD`"
+var buildstamp = "TODAY"
+var githash = "DEV"
 
 // wether to display the version information
 var showVersion bool
@@ -121,8 +121,7 @@ func parseFlags() {
 }
 
 func displayVersion() {
-	fmt.Printf("Git Commit Hash: %s\n", githash)
-	fmt.Printf("UTC Build Time: %s", buildstamp)
+	fmt.Printf("%s version %s", getAppName(), getVersion())
 }
 
 func createLogger(prefix string) *log2.Logger {
@@ -149,7 +148,7 @@ func runBenchmark() {
 
 	// Init the final report
 	ctx.Report = sbmark.Report{
-		ClientEnv:   fmt.Sprintf("Application: %s, Host: %s, OS: %s", filepath.Base(os.Args[0]), getHostname(), runtime.GOOS),
+		ClientEnv:   fmt.Sprintf("Application: %s, Version: %s, Host: %s, OS: %s", getAppName(), getVersion(), getHostname(), runtime.GOOS),
 		ServerEnv:   ctx.Endpoint, // How can we get some informations about the ServerEnv? Or should this be a CLI param?
 		DateTimeUTC: time.Now().UTC().String(),
 		Records:     []sbmark.Record{},
@@ -221,6 +220,14 @@ func getHostname() string {
 		panic(err)
 	}
 	return hostname
+}
+
+func getVersion() string {
+	return fmt.Sprintf("%s.%s", buildstamp, githash)
+}
+
+func getAppName() string {
+	return filepath.Base(os.Args[0])
 }
 
 func getTargetPath() string {
