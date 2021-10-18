@@ -43,6 +43,10 @@ func (op *OperationWrite) Execute(ctx *BenchmarkContext, sampleId int, payloadSi
 func (op *OperationWrite) CleanupTestdata(ctx *BenchmarkContext, ticker Ticker) {
 	for _, key := range op.keys {
 		ticker.Add(1)
+		// don't remove keys that an error was logged for so that the operator can analyse the error after the testrun.
+		if contains(op.errKeys, key) {
+			continue
+		}
 		ctx.Client.DeleteObject(ctx.Path, key)
 	}
 }
