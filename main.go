@@ -109,7 +109,9 @@ func parseFlags() {
 		Samples:       *samplesArg,
 		NumberOfRuns:  0,
 		Hostname:      getHostname(),
-		Logger:        createLogger(),
+		InfoLogger:    createLogger("INFO "),
+		WarningLogger: createLogger("WARNING "),
+		ErrorLogger:   createLogger("ERROR "),
 	}
 
 	err := ctx.Start()
@@ -123,9 +125,9 @@ func displayVersion() {
 	fmt.Printf("UTC Build Time: %s", buildstamp)
 }
 
-func createLogger() *log2.Logger {
+func createLogger(prefix string) *log2.Logger {
 	file, _ := os.OpenFile(filepath.FromSlash(logPath+"/")+"storage-benchmark.log", os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0777)
-	return log2.New(file, "storage-benchmark", log2.Ldate+log2.Ltime+log2.Lshortfile+log2.Lmsgprefix)
+	return log2.New(file, prefix, log2.Ldate+log2.Ltime+log2.Lshortfile+log2.Lmsgprefix)
 }
 
 func createBenchmarkBucket() {

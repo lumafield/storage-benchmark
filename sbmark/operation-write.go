@@ -6,7 +6,8 @@ import (
 )
 
 type OperationWrite struct {
-	keys []string
+	keys    []string
+	errKeys []string
 }
 
 func (op *OperationWrite) EnsureTestdata(ctx *BenchmarkContext, payloadSite uint64, ticker Ticker) {
@@ -27,12 +28,14 @@ func (op *OperationWrite) Execute(ctx *BenchmarkContext, sampleId int, payloadSi
 	// measure the last byte latency
 	latency.LastByte = time.Since(latencyTimer)
 
-	// if a request fails, exit
-	if err != nil {
-		panic("Failed to put object: " + err.Error())
-	}
-
 	op.keys = append(op.keys, key)
+
+	// if a request fails, log the error and return
+	if err != nil {
+		ctx.WarningLogger.Printf("Error writing object %s (payload: %s, sample: %d): %s", key, ByteFormat(float64(payloadSize)), sampleId, err.Error())
+		op.errKeys = append(op.errKeys, key)
+		latency.Errors = append(latency.Errors, err)
+	}
 
 	return latency
 }

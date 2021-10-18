@@ -103,6 +103,10 @@ func (m *LatencyBenchmarkMode) execTest(ctx *BenchmarkContext, threadCount int, 
 	// wait for all the results to come and collect the individual datapoints
 	for s := 1; s <= ctx.Samples; s++ {
 		timing := <-results
+		// Only take results from samples without errors
+		if timing.Errors != nil {
+			continue
+		}
 		dataPoints = append(dataPoints, timing)
 		sumFirstByte += timing.FirstByte.Nanoseconds()
 		sumLastByte += timing.LastByte.Nanoseconds()

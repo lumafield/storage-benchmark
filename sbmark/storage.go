@@ -25,6 +25,7 @@ type Latency struct {
 	TCPConnection    time.Duration
 	TLSHandshake     time.Duration
 	ServerProcessing time.Duration
+	Errors           []error
 }
 
 func (lat *Latency) Unassigned() time.Duration {

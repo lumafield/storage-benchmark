@@ -24,6 +24,12 @@ type Ticker interface {
 	Add(ticks int) error
 }
 
+type NilTicker struct{}
+
+func (t *NilTicker) Add(ticks int) error {
+	return nil
+}
+
 type BenchmarkMode interface {
 	PrintHeader(objectSize uint64, operationToTest string)
 	PrintRecord(record Record)
@@ -69,7 +75,9 @@ type BenchmarkContext struct {
 	state state
 
 	// The logger can be used from anywhere to log stuff
-	Logger *log2.Logger
+	InfoLogger    *log2.Logger
+	WarningLogger *log2.Logger
+	ErrorLogger   *log2.Logger
 }
 
 func (ctx *BenchmarkContext) Start() error {
@@ -172,4 +180,13 @@ func GenerateRandomString(seed int) string {
 		b.WriteRune(chars[rand.Intn(len(chars))])
 	}
 	return b.String()
+}
+
+func contains(s []string, e string) bool {
+	for _, a := range s {
+		if a == e {
+			return true
+		}
+	}
+	return false
 }

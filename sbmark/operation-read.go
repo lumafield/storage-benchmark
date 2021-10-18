@@ -8,7 +8,8 @@ import (
 )
 
 type OperationRead struct {
-	keys []string
+	keys    []string
+	errKeys []string
 }
 
 func (op *OperationRead) EnsureTestdata(ctx *BenchmarkContext, payloadSize uint64, ticker Ticker) {
@@ -31,6 +32,7 @@ func (op *OperationRead) EnsureTestdata(ctx *BenchmarkContext, payloadSize uint6
 
 		// if other error, exit
 		if err != nil && !strings.Contains(err.Error(), "NotFound:") {
+			op.CleanupTestdata(ctx, &NilTicker{})
 			panic("Failed to head object: " + err.Error())
 		}
 
@@ -43,6 +45,7 @@ func (op *OperationRead) EnsureTestdata(ctx *BenchmarkContext, payloadSize uint6
 
 		// if the put fails, exit
 		if err != nil {
+			op.CleanupTestdata(ctx, &NilTicker{})
 			panic("Failed to put object: " + err.Error())
 		}
 	}
@@ -50,6 +53,7 @@ func (op *OperationRead) EnsureTestdata(ctx *BenchmarkContext, payloadSize uint6
 
 func (op *OperationRead) Execute(ctx *BenchmarkContext, sampleId int, payloadSize uint64) Latency {
 	key := generateObjectKey(sampleId, payloadSize)
+
 	// start the timer to measure the first byte and last byte latencies
 	latencyTimer := time.Now()
 
@@ -58,7 +62,10 @@ func (op *OperationRead) Execute(ctx *BenchmarkContext, sampleId int, payloadSiz
 
 	// if a request fails, exit
 	if err != nil {
-		panic("Failed to get object: " + err.Error())
+		ctx.ErrorLogger.Fatalf("Failed to get object %s: %s", key, err.Error())
+		op.errKeys = append(op.errKeys, key)
+		latency.Errors = append(latency.Errors, err)
+		return latency
 	}
 
 	// measure the first byte latency
@@ -78,9 +85,12 @@ func (op *OperationRead) Execute(ctx *BenchmarkContext, sampleId int, payloadSiz
 			break
 		}
 
-		// if the streaming fails, exit
+		// if the streaming fails, log the error
 		if err != nil {
-			panic("Error reading object body: " + err.Error())
+			ctx.WarningLogger.Printf("Error reading object body of object %s (payload: %s, sample: %d): %s", key, ByteFormat(float64(payloadSize)), sampleId, err.Error())
+			op.errKeys = append(op.errKeys, key)
+			latency.Errors = append(latency.Errors, err)
+			break
 		}
 	}
 
@@ -91,7 +101,9 @@ func (op *OperationRead) Execute(ctx *BenchmarkContext, sampleId int, payloadSiz
 
 	// if the datastream can't be closed, exit
 	if err != nil {
-		panic("Error closing the datastream: " + err.Error())
+		ctx.ErrorLogger.Printf("Error closing the datastream of object %s: %s", key, err.Error())
+		op.errKeys = append(op.errKeys, key)
+		latency.Errors = append(latency.Errors, err)
 	}
 
 	return latency
@@ -100,6 +112,10 @@ func (op *OperationRead) Execute(ctx *BenchmarkContext, sampleId int, payloadSiz
 func (op *OperationRead) CleanupTestdata(ctx *BenchmarkContext, ticker Ticker) {
 	for _, key := range op.keys {
 		ticker.Add(1)
+		// don't remove keys that an error was logged for so that the operator can analyse the error after the testrun.
+		if contains(op.errKeys, key) {
+			continue
+		}
 		ctx.Client.DeleteObject(ctx.Path, key)
 	}
 }
