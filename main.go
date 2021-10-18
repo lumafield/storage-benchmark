@@ -223,7 +223,7 @@ func getHostname() string {
 }
 
 func getVersion() string {
-	return fmt.Sprintf("%s.%s", buildstamp, githash)
+	return fmt.Sprintf("%s.%s", githash, buildstamp)
 }
 
 func getAppName() string {
