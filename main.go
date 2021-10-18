@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/iternity-dotcom/storage-benchmark/sbmark"
-	"github.com/schollz/progressbar/v2"
 )
 
 const bucketNamePrefix = "storage-benchmark"
@@ -76,8 +75,7 @@ func parseFlags() {
 	operationArg := flag.String("operation", "read", "Specify if you want to measure 'read' or 'write'. Default is 'read'")
 	createBucketArg := flag.Bool("create-bucket", false, "create new bucket(default false)")
 	logPathArg := flag.String("log-path", "", "Specify the path of the log file. Default is 'currentDir'")
-	burstModeArg := flag.Bool("burst-mode", false, "Runs a continuous test to find the maximum throughput for different payload sizes.")
-	infiniteModeArg := flag.Bool("infinite-mode", false, "Run the tests in a infinite loop. 'Read' or 'Write' depends on the value of operation flag. Default is 'false'")
+	modeArg := flag.String("mode", "latency", "What do you want to measure? Choose 'latency' or 'throughput'. Default is 'latency'")
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
@@ -91,13 +89,10 @@ func parseFlags() {
 	} else {
 		logPath = *logPathArg
 	}
-	burstMode = *burstModeArg
-	infiniteMode = *infiniteModeArg
 
 	ctx = &sbmark.BenchmarkContext{
 		Description:   *descriptionArg,
-		ModeName:      "LatencyMode",
-		Mode:          &sbmark.LatencyBenchmarkMode{},
+		ModeName:      *modeArg,
 		OperationName: *operationArg,
 		Endpoint:      *endpointArg,
 		Region:        *regionArg,
@@ -144,8 +139,6 @@ func createBenchmarkBucket() {
 
 func runBenchmark() {
 
-	fmt.Print("\n--- BENCHMARK ---------------------------------------------------------------------------------------------------------------------------------------------------\n\n")
-
 	// Init the final report
 	ctx.Report = sbmark.Report{
 		ClientEnv:   fmt.Sprintf("Application: %s, Version: %s, Host: %s, OS: %s", getAppName(), getVersion(), getHostname(), runtime.GOOS),
@@ -157,6 +150,8 @@ func runBenchmark() {
 	// an object size iterator that starts from 1 KB and doubles the size on every iteration
 	generatePayload := payloadSizeGenerator()
 
+	ctx.Mode.PrintHeader(ctx.OperationName)
+
 	// loop over every payload size (we need to start at p := 1 because of the generatePayload() function)
 	for p := 1; p <= ctx.PayloadsMax; p++ {
 		// get an object size from the iterator
@@ -167,24 +162,14 @@ func runBenchmark() {
 			continue
 		}
 
-		fmt.Printf("Preparing benchmark for %s objects\n", sbmark.ByteFormat(float64(payloadSize)))
-		uploadBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
-		ctx.Operation.EnsureTestdata(ctx, payloadSize, uploadBar)
-
-		fmt.Printf("\n\n")
-
-		ctx.Mode.PrintHeader(payloadSize, ctx.OperationName)
-
+		ctx.Mode.EnsureTestdata(ctx, payloadSize)
+		ctx.Mode.PrintPayloadHeader(payloadSize, ctx.OperationName)
 		ctx.Mode.ExecuteBenchmark(ctx, payloadSize)
-
-		ctx.Mode.PrintFooter()
-
-		fmt.Printf("Deleting %d x %s objects\n", ctx.NumberOfObjectsPerPayload(), sbmark.ByteFormat(float64(payloadSize)))
-		cleanupBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
-		ctx.Operation.CleanupTestdata(ctx, cleanupBar)
-
-		fmt.Printf("\n\n\n\n")
+		ctx.Mode.PrintPayloadFooter()
+		ctx.Mode.CleanupTestdata(ctx, payloadSize)
 	}
+
+	ctx.Mode.PrintFooter()
 
 	// if the csv option is set, save the report as .csv
 	if csvFileName != "" {

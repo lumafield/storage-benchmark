@@ -4,74 +4,63 @@ import (
 	"fmt"
 	"sort"
 	"time"
-
-	"github.com/schollz/progressbar/v2"
 )
 
-type LatencyBenchmarkMode struct {
+type ThroughputBenchmarkMode struct {
 }
 
-func (m *LatencyBenchmarkMode) IsFinished(numberOfRuns int) bool {
+func (m *ThroughputBenchmarkMode) IsFinished(numberOfRuns int) bool {
 	return numberOfRuns >= 1
 }
 
-func (m *LatencyBenchmarkMode) PrintHeader(operationToTest string) {
-	fmt.Print("\n--- BENCHMARK - Latency ------------------------------------------------------------------------------------------------------\n\n")
-}
+func (m *ThroughputBenchmarkMode) PrintHeader(operationToTest string) {
+	fmt.Print("\n--- BENCHMARK - Throughput ---------------------------------------------------------------------------------------------------\n\n")
 
-func (m *LatencyBenchmarkMode) PrintPayloadHeader(objectSize uint64, operationToTest string) {
 	// prints the table header for the test results
-	fmt.Printf("Latencies for operation '%s' of %s objects\n", operationToTest, ByteFormat(float64(objectSize)))
-	fmt.Println("                           +-------------------------------------------------------------------------------------------------+----------------------------------+")
-	fmt.Println("                           |            Time to First Byte (ms)             |            Time to Last Byte (ms)              | Latency Distribution (avg in ms) |")
-	fmt.Println("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+")
-	fmt.Println("| Threads |     Throughput |  avg   min   p25   p50   p75   p90   p99   max |  avg   min   p25   p50   p75   p90   p99   max |    dns   tcp   tls   srv   rest  |")
-	fmt.Println("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+")
+	fmt.Printf("Max throughput for operation '%s' \n", operationToTest)
+	fmt.Println("+-------------+---------+-----------------+")
+	fmt.Println("| Object Size | Threads | Max. Throughput |")
+	fmt.Println("+-------------+---------+-----------------+")
 }
 
-func (m *LatencyBenchmarkMode) PrintRecord(record Record) {
+func (m *ThroughputBenchmarkMode) PrintPayloadHeader(objectSize uint64, operationToTest string) {
+}
+
+func (m *ThroughputBenchmarkMode) PrintRecord(record Record) {
 	// print the results to stdout
-	fmt.Printf("| %7d | %9.3f MB/s |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |%5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f %5.0f |%7.0f %5.0f %5.0f %5.0f %6.0f  |\n",
-		record.Threads, record.ThroughputMBps(),
-		record.TimeToFirstByte["avg"], record.TimeToFirstByte["min"], record.TimeToFirstByte["p25"], record.TimeToFirstByte["p50"], record.TimeToFirstByte["p75"], record.TimeToFirstByte["p90"], record.TimeToFirstByte["p99"], record.TimeToFirstByte["max"],
-		record.TimeToLastByte["avg"], record.TimeToLastByte["min"], record.TimeToLastByte["p25"], record.TimeToLastByte["p50"], record.TimeToLastByte["p75"], record.TimeToLastByte["p90"], record.TimeToLastByte["p99"], record.TimeToLastByte["max"],
-		record.DNSLookup["avg"], record.TCPConnection["avg"], record.TLSHandshake["avg"], record.ServerProcessing["avg"], record.Unassigned["avg"])
+	fmt.Printf("| %11s | %7d | %10.3f MB/s |\n",
+		ByteFormat(float64(record.ObjectSizeBytes)), record.Threads, record.ThroughputMBps())
 }
 
-func (m *LatencyBenchmarkMode) PrintPayloadFooter() {
-	fmt.Print("+---------+----------------+------------------------------------------------+------------------------------------------------+----------------------------------+\n\n")
+func (m *ThroughputBenchmarkMode) PrintPayloadFooter() {
 }
 
-func (m *LatencyBenchmarkMode) PrintFooter() {
+func (m *ThroughputBenchmarkMode) PrintFooter() {
+	fmt.Print("+-------------+---------+-----------------+\n\n")
 	fmt.Printf("\n\n\n\n")
 }
 
-func (m *LatencyBenchmarkMode) EnsureTestdata(ctx *BenchmarkContext, payloadSize uint64) {
-	fmt.Printf("Preparing benchmark for %s objects\n", ByteFormat(float64(payloadSize)))
-	uploadBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
-	ctx.Operation.EnsureTestdata(ctx, payloadSize, uploadBar)
+func (m *ThroughputBenchmarkMode) EnsureTestdata(ctx *BenchmarkContext, payloadSize uint64) {
+	ctx.Operation.EnsureTestdata(ctx, payloadSize, &NilTicker{})
 }
 
-func (m *LatencyBenchmarkMode) CleanupTestdata(ctx *BenchmarkContext, payloadSize uint64) {
-	fmt.Printf("Deleting %d x %s objects\n", ctx.NumberOfObjectsPerPayload(), ByteFormat(float64(payloadSize)))
-	cleanupBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
-	ctx.Operation.CleanupTestdata(ctx, cleanupBar)
+func (m *ThroughputBenchmarkMode) CleanupTestdata(ctx *BenchmarkContext, payloadSize uint64) {
+	ctx.Operation.CleanupTestdata(ctx, &NilTicker{})
 }
 
-func (m *LatencyBenchmarkMode) ExecuteBenchmark(ctx *BenchmarkContext, payloadSize uint64) {
-	// run a test per thread count and object size combination
-	for t := ctx.ThreadsMin; t <= ctx.ThreadsMax; t++ {
-		for {
-			ctx.NumberOfRuns++
-			m.execTest(ctx, t, payloadSize, ctx.NumberOfRuns)
-			if m.IsFinished(ctx.NumberOfRuns) {
-				break
-			}
+func (m *ThroughputBenchmarkMode) ExecuteBenchmark(ctx *BenchmarkContext, payloadSize uint64) {
+	// increase thread count until throughput is not increasing anymore
+	t := 0
+	for {
+		t++
+		m.execTest(ctx, t, payloadSize, ctx.NumberOfRuns)
+		if m.IsFinished(ctx.NumberOfRuns) {
+			break
 		}
 	}
 }
 
-func (m *LatencyBenchmarkMode) execTest(ctx *BenchmarkContext, threadCount int, payloadSize uint64, runId int) {
+func (m *ThroughputBenchmarkMode) execTest(ctx *BenchmarkContext, threadCount int, payloadSize uint64, runId int) {
 	// a channel to submit the test tasks
 	testTasks := make(chan int, threadCount)
 

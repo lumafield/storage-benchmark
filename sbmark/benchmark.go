@@ -31,9 +31,13 @@ func (t *NilTicker) Add(ticks int) error {
 }
 
 type BenchmarkMode interface {
-	PrintHeader(objectSize uint64, operationToTest string)
+	PrintHeader(operationToTest string)
+	PrintPayloadHeader(objectSize uint64, operationToTest string)
 	PrintRecord(record Record)
+	PrintPayloadFooter()
 	PrintFooter()
+	EnsureTestdata(ctx *BenchmarkContext, payloadSize uint64)
+	CleanupTestdata(ctx *BenchmarkContext, payloadSize uint64)
 	ExecuteBenchmark(ctx *BenchmarkContext, payloadSize uint64)
 	IsFinished(numberOfRuns int) bool
 }
@@ -56,7 +60,7 @@ type BenchmarkContext struct {
 	ThreadsMax    int    `json:"threads_max"`  // the maxiumu number of threads to test
 	Samples       int    `json:"samples"`      // the number of samples to collect for each benchmark record
 	OperationName string `json:"operation"`    // operations might be "read" or "write. Default is "read".
-	ModeName      string `json:"mode"`         // latency, burst, ...
+	ModeName      string `json:"mode"`         // latency, throughput, ...
 	Report        Report `json:"report"`       // The final report of this benchmark run
 
 	// the BenchmarkMode instance of the testrun (corresponds to the ModeName)
@@ -87,6 +91,7 @@ func (ctx *BenchmarkContext) Start() error {
 	}
 	ctx.setupClient()
 	ctx.setupOperation()
+	ctx.setupMode()
 	ctx.state = started
 	return nil
 }
@@ -102,6 +107,14 @@ func (ctx *BenchmarkContext) setupClient() {
 			Endpoint: ctx.Endpoint,
 			Insecure: true,
 		})
+	}
+}
+
+func (ctx *BenchmarkContext) setupMode() {
+	if strings.HasPrefix(strings.ToLower(ctx.ModeName), "throughput") {
+		ctx.Mode = &ThroughputBenchmarkMode{}
+	} else {
+		ctx.Mode = &LatencyBenchmarkMode{}
 	}
 }
 
