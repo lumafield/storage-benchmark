@@ -73,7 +73,7 @@ type BenchmarkContext struct {
 	// the client to operate on objects. It's safe to use a single client across multiple go routines.
 	Client StorageInterface
 
-	// For infinite or burst mode a numberOfRuns is incremented for every loop.
+	// For burst mode a numberOfRuns is incremented for every loop.
 	NumberOfRuns int
 
 	// The state of this context (started or stopped)
@@ -174,14 +174,6 @@ func generateObjectKey(threadIndex int, payloadSize uint64) string {
 	var key string
 	keyHash := sha1.Sum([]byte(fmt.Sprintf("%03d-%012d", threadIndex, payloadSize)))
 	folder := strconv.Itoa(int(payloadSize))
-	/*if ctx.OperationName == "write" && infiniteMode {
-		key = folder +
-			"/" + generateRandomString(threadIndex) +
-			"/" + generateRandomString(threadIndex) +
-			"/" + (fmt.Sprintf("%x", keyHash))
-	} else {
-		key = folder + "/" + (fmt.Sprintf("%x", keyHash))
-	}*/
 	key = folder + "/" + (fmt.Sprintf("%x", keyHash))
 	return key
 }
