@@ -69,12 +69,14 @@ func (m *LatencyBenchmarkMode) EnsureTestdata(ctx *BenchmarkContext, payloadSize
 	fmt.Printf("Preparing benchmark for %s objects\n", ByteFormat(float64(payloadSize)))
 	uploadBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
 	ctx.Operation.EnsureTestdata(ctx, payloadSize, uploadBar)
+	fmt.Printf("\n\n")
 }
 
 func (m *LatencyBenchmarkMode) CleanupTestdata(ctx *BenchmarkContext, payloadSize uint64) {
 	fmt.Printf("Deleting %d x %s objects\n", ctx.NumberOfObjectsPerPayload(), ByteFormat(float64(payloadSize)))
 	cleanupBar := progressbar.NewOptions(ctx.Samples-1, progressbar.OptionSetRenderBlankState(true))
 	ctx.Operation.CleanupTestdata(ctx, cleanupBar)
+	fmt.Printf("\n\n\n\n")
 }
 
 func (m *LatencyBenchmarkMode) ExecuteBenchmark(ctx *BenchmarkContext, payloadSize uint64) {
