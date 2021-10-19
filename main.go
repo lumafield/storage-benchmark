@@ -75,7 +75,7 @@ func parseFlags() {
 	operationArg := flag.String("operation", "read", "Specify if you want to measure 'read' or 'write'. Default is 'read'")
 	createBucketArg := flag.Bool("create-bucket", false, "create new bucket(default false)")
 	logPathArg := flag.String("log-path", "", "Specify the path of the log file. Default is 'currentDir'")
-	modeArg := flag.String("mode", "latency", "What do you want to measure? Choose 'latency' or 'throughput'. Default is 'latency'")
+	modeArg := flag.String("mode", "latency", "What do you want to measure? Choose 'latency' or 'burst'. Default is 'latency'")
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()

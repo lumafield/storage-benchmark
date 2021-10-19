@@ -65,7 +65,6 @@ func (m *BurstBenchmarkMode) ExecuteBenchmark(ctx *BenchmarkContext, payloadSize
 			ctx.NumberOfRuns++
 			numberOfRuns++
 			record := m.execTest(ctx, t, payloadSize, ctx.NumberOfRuns)
-			// append the record to the report
 			if record.ThroughputBps() > maxRecord.ThroughputBps() {
 				maxRecord = record
 			}

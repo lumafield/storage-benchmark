@@ -113,9 +113,7 @@ func (ctx *BenchmarkContext) setupClient() {
 }
 
 func (ctx *BenchmarkContext) setupMode() {
-	if strings.HasPrefix(strings.ToLower(ctx.ModeName), "throughput") {
-		ctx.Mode = &ThroughputBenchmarkMode{}
-	} else if strings.HasPrefix(strings.ToLower(ctx.ModeName), "burst") {
+	if strings.HasPrefix(strings.ToLower(ctx.ModeName), "burst") {
 		ctx.Mode = &BurstBenchmarkMode{}
 	} else {
 		ctx.Mode = &LatencyBenchmarkMode{}
