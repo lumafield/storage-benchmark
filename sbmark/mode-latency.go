@@ -73,7 +73,7 @@ func (m *LatencyBenchmarkMode) ExecuteBenchmark(ctx *BenchmarkContext, payloadSi
 
 func (m *LatencyBenchmarkMode) execTest(ctx *BenchmarkContext, threadCount int, payloadSize uint64, runId int) {
 	// a channel to submit the test tasks
-	testTasks := make(chan int, threadCount)
+	testTasks := make(chan int, ctx.Samples)
 
 	// a channel to receive results from the test tasks back on the main thread
 	results := make(chan Latency, ctx.Samples)
