@@ -9,7 +9,9 @@ type Report struct {
 
 type Record struct {
 	Operation        string             `json:"operation"` // read, write, ...
-	ObjectSizeBytes  uint64             `json:"object_size_bytes"`
+	TotalBytes       uint64             `json:"total_bytes"`
+	SingleObjectSize uint64             `json:"single_object_size_bytes"`
+	ObjectsCount     uint64             `json:"objects_count"`
 	DurationSeconds  float64            `json:"duration_secs"`
 	Threads          int                `json:"threads"`
 	TimeToFirstByte  map[string]float64 `json:"ttfb_latency_ms"`
@@ -26,5 +28,5 @@ func (r *Record) ThroughputMBps() float64 {
 }
 
 func (r *Record) ThroughputBps() float64 {
-	return (float64(r.ObjectSizeBytes)) / r.DurationSeconds
+	return (float64(r.TotalBytes)) / r.DurationSeconds
 }

@@ -8,6 +8,10 @@ import (
 type ThroughputBenchmarkMode struct {
 }
 
+func (m *ThroughputBenchmarkMode) DisableKeepAlives() bool {
+	return false
+}
+
 func (m *ThroughputBenchmarkMode) IsFinished(numberOfRuns int) bool {
 	return numberOfRuns >= 1
 }
@@ -28,7 +32,7 @@ func (m *ThroughputBenchmarkMode) PrintPayloadHeader(objectSize uint64, operatio
 func (m *ThroughputBenchmarkMode) PrintRecord(record Record) {
 	// print the results to stdout
 	fmt.Printf("| %11s | %7d | %10.3f MB/s |\n",
-		ByteFormat(float64(record.ObjectSizeBytes)), record.Threads, record.ThroughputMBps())
+		ByteFormat(float64(record.TotalBytes)), record.Threads, record.ThroughputMBps())
 }
 
 func (m *ThroughputBenchmarkMode) PrintPayloadFooter() {

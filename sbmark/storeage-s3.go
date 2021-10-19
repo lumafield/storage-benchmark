@@ -21,9 +21,10 @@ type S3ObjectClient struct {
 }
 
 type S3ObjectClientConfig struct {
-	Region   string
-	Endpoint string
-	Insecure bool
+	Region            string
+	Endpoint          string
+	Insecure          bool
+	DisableKeepAlives bool
 }
 
 func NewS3Client(obConfig *S3ObjectClientConfig) StorageInterface {
@@ -53,7 +54,7 @@ func NewS3Client(obConfig *S3ObjectClientConfig) StorageInterface {
 	// trust all certificates
 	tr := &http.Transport{
 		TLSClientConfig:   &tls.Config{InsecureSkipVerify: obConfig.Insecure},
-		DisableKeepAlives: true, // Disables connection pooling, so that TCP and TLS handshakes has to be done on every request.
+		DisableKeepAlives: obConfig.DisableKeepAlives, // false disables connection pooling, so that TCP and TLS handshakes has to be done on every request.
 	}
 	// set a 3-minute timeout for all S3 calls, including downloading the body
 	cfg.HTTPClient = &http.Client{

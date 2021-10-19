@@ -11,6 +11,12 @@ import (
 type LatencyBenchmarkMode struct {
 }
 
+func (m *LatencyBenchmarkMode) DisableKeepAlives() bool {
+	// We want to measure latencies for connection setup (DNS, TCP, TLS) as well.
+	// So we disable keepalives to avoid connection pooling.
+	return true
+}
+
 func (m *LatencyBenchmarkMode) IsFinished(numberOfRuns int) bool {
 	return numberOfRuns >= 1
 }
@@ -99,7 +105,9 @@ func (m *LatencyBenchmarkMode) execTest(ctx *BenchmarkContext, threadCount int, 
 	sumUnassigned := int64(0)
 
 	record := Record{
-		ObjectSizeBytes:  0,
+		TotalBytes:       0,
+		SingleObjectSize: payloadSize,
+		ObjectsCount:     0,
 		Operation:        ctx.OperationName,
 		Threads:          threadCount,
 		TimeToFirstByte:  make(map[string]float64),
@@ -137,7 +145,8 @@ func (m *LatencyBenchmarkMode) execTest(ctx *BenchmarkContext, threadCount int, 
 		sumTLSHandshake += timing.TLSHandshake.Nanoseconds()
 		sumServerProcessing += timing.ServerProcessing.Nanoseconds()
 		sumUnassigned += timing.Unassigned().Nanoseconds()
-		record.ObjectSizeBytes += payloadSize
+		record.TotalBytes += payloadSize
+		record.ObjectsCount += 1
 	}
 
 	// stop the timer for this benchmark

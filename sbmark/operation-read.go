@@ -62,7 +62,7 @@ func (op *OperationRead) Execute(ctx *BenchmarkContext, sampleId int, payloadSiz
 
 	// if a request fails, exit
 	if err != nil {
-		ctx.ErrorLogger.Fatalf("Failed to get object %s: %s", key, err.Error())
+		ctx.ErrorLogger.Printf("Failed to get object %s: %s", key, err.Error())
 		op.errKeys = append(op.errKeys, key)
 		latency.Errors = append(latency.Errors, err)
 		return latency

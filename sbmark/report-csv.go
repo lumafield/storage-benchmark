@@ -15,7 +15,7 @@ func ToCsv(report Report) ([]byte, error) {
 		csvRecords = append(csvRecords, []string{
 			report.ClientEnv,
 			report.ServerEnv,
-			fmt.Sprintf("%d", record.ObjectSizeBytes),
+			fmt.Sprintf("%d", record.TotalBytes),
 			fmt.Sprintf("%d", record.Threads),
 			fmt.Sprintf("%.3f", record.ThroughputMBps()),
 			fmt.Sprintf("%.1f", record.TimeToFirstByte["avg"]),

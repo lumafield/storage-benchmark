@@ -31,6 +31,7 @@ func (t *NilTicker) Add(ticks int) error {
 }
 
 type BenchmarkMode interface {
+	DisableKeepAlives() bool
 	PrintHeader(operationToTest string)
 	PrintPayloadHeader(objectSize uint64, operationToTest string)
 	PrintRecord(record Record)
@@ -89,9 +90,9 @@ func (ctx *BenchmarkContext) Start() error {
 	if err != nil {
 		return err
 	}
-	ctx.setupClient()
-	ctx.setupOperation()
 	ctx.setupMode()
+	ctx.setupOperation()
+	ctx.setupClient()
 	ctx.state = started
 	return nil
 }
@@ -103,9 +104,10 @@ func (ctx *BenchmarkContext) setupClient() {
 		})
 	} else {
 		ctx.Client = NewS3Client(&S3ObjectClientConfig{
-			Region:   ctx.Region,
-			Endpoint: ctx.Endpoint,
-			Insecure: true,
+			Region:            ctx.Region,
+			Endpoint:          ctx.Endpoint,
+			Insecure:          true,
+			DisableKeepAlives: ctx.Mode.DisableKeepAlives(),
 		})
 	}
 }
@@ -113,6 +115,8 @@ func (ctx *BenchmarkContext) setupClient() {
 func (ctx *BenchmarkContext) setupMode() {
 	if strings.HasPrefix(strings.ToLower(ctx.ModeName), "throughput") {
 		ctx.Mode = &ThroughputBenchmarkMode{}
+	} else if strings.HasPrefix(strings.ToLower(ctx.ModeName), "burst") {
+		ctx.Mode = &BurstBenchmarkMode{}
 	} else {
 		ctx.Mode = &LatencyBenchmarkMode{}
 	}
