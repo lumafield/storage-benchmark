@@ -23,6 +23,19 @@ func (m *LatencyBenchmarkMode) IsFinished(numberOfRuns int) bool {
 
 func (m *LatencyBenchmarkMode) PrintHeader(operationToTest string) {
 	fmt.Print("\n--- BENCHMARK - Latency ------------------------------------------------------------------------------------------------------\n\n")
+
+	fmt.Printf("Latency Distribution Example (values are hard coded and only for explanation)\n\n")
+	fmt.Printf(``+
+		`  DNS Lookup   TCP Connection   TLS Handshake   Server Processing   Response Transfer`+"\n"+
+		`[%5dms    |  %7dms     |  %7dms    |    %7dms      |    %7dms     ]`+"\n"+
+		`            |                |               |                   |                  |`+"\n"+
+		`      namelookup:%-9s   |               |                   |                  |`+"\n"+
+		`                       connect:%-9s     |                   |                  |`+"\n"+
+		`                                     pretransfer:%-9s       |                  |`+"\n"+
+		`                                                    time-to-first-byte:%-9s    |`+"\n"+
+		`                                                                        time-to-last-byte:%-8s`+"\n\n",
+		2, 5, 153, 14, 326,
+		"2ms", "7ms", "16ms", "174ms", "500ms")
 }
 
 func (m *LatencyBenchmarkMode) PrintPayloadHeader(objectSize uint64, operationToTest string) {
