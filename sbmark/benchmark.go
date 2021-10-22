@@ -65,24 +65,24 @@ type BenchmarkContext struct {
 	Report        Report `json:"report"`       // The final report of this benchmark run
 
 	// the BenchmarkMode instance of the testrun (corresponds to the ModeName)
-	Mode BenchmarkMode
+	Mode BenchmarkMode `json:"-"`
 
 	// The BenchmarkOperation instance of this testrun (corresponds to the OperationName)
-	Operation BenchmarkOperation
+	Operation BenchmarkOperation `json:"-"`
 
 	// the client to operate on objects. It's safe to use a single client across multiple go routines.
-	Client StorageInterface
+	Client StorageInterface `json:"-"`
 
 	// For burst mode a numberOfRuns is incremented for every loop.
-	NumberOfRuns int
+	NumberOfRuns int `json:"-"`
 
 	// The state of this context (started or stopped)
-	state state
+	state state `json:"-"`
 
 	// The logger can be used from anywhere to log stuff
-	InfoLogger    *log2.Logger
-	WarningLogger *log2.Logger
-	ErrorLogger   *log2.Logger
+	InfoLogger    *log2.Logger `json:"-"`
+	WarningLogger *log2.Logger `json:"-"`
+	ErrorLogger   *log2.Logger `json:"-"`
 }
 
 func (ctx *BenchmarkContext) Start() error {
