@@ -2,7 +2,10 @@ package sbmark
 
 import (
 	"fmt"
+	"sort"
 	"time"
+
+	"github.com/montanaflynn/stats"
 )
 
 type BurstBenchmarkMode struct {
@@ -23,9 +26,11 @@ func (m *BurstBenchmarkMode) PrintHeader(operationToTest string) {
 
 	// prints the table header for the test results
 	fmt.Printf("Max throughput for operation '%s' \n", operationToTest)
-	fmt.Println("+-------------+---------+-----------------+")
-	fmt.Println("| Object Size | Threads | Max. Throughput |")
-	fmt.Println("+-------------+---------+-----------------+")
+	fmt.Println("                                  +---------------------------------------------------------------------------------------+")
+	fmt.Println("                                  |                                   Throughput (MB/s)                                   |")
+	fmt.Println("+-------------+---------+---------+---------------------------------------------------------------------------------------+")
+	fmt.Println("| Object Size | Threads | Samples |      avg        min        p25        p50        p75        p90        p99        max |")
+	fmt.Println("+-------------+---------+---------+---------------------------------------------------------------------------------------+")
 }
 
 func (m *BurstBenchmarkMode) PrintPayloadHeader(objectSize uint64, operationToTest string) {
@@ -33,16 +38,20 @@ func (m *BurstBenchmarkMode) PrintPayloadHeader(objectSize uint64, operationToTe
 
 func (m *BurstBenchmarkMode) PrintRecord(record Record) {
 	// print the results to stdout
-	fmt.Printf("| %11s | %7d | %10.3f MB/s |\n",
-		ByteFormat(float64(record.SingleObjectSize)), record.Threads, record.ThroughputMBps())
+	fmt.Printf("| %11s | %7d | %7d | %8.2f   %8.2f   %8.2f   %8.2f   %8.2f   %8.2f   %8.2f   %8.2f |\n",
+		ByteFormat(float64(record.SingleObjectSize)), record.Threads, len(record.Throughput),
+		record.Throughput["avg"], record.Throughput["min"],
+		record.Throughput["p25"], record.Throughput["p50"], record.Throughput["p75"], record.Throughput["p90"], record.Throughput["p99"],
+		record.Throughput["max"],
+	)
 }
 
 func (m *BurstBenchmarkMode) PrintPayloadFooter() {
 }
 
 func (m *BurstBenchmarkMode) PrintFooter() {
-	fmt.Print("+-------------+---------+-----------------+\n\n")
-	fmt.Printf("\n\n\n\n")
+	fmt.Println("+-------------+---------+---------+---------------------------------------------------------------------------------------+")
+	fmt.Printf("\n\n\n\n\n")
 }
 
 func (m *BurstBenchmarkMode) EnsureTestdata(ctx *BenchmarkContext, payloadSize uint64) {
@@ -54,6 +63,7 @@ func (m *BurstBenchmarkMode) CleanupTestdata(ctx *BenchmarkContext, payloadSize 
 }
 
 func (m *BurstBenchmarkMode) ExecuteBenchmark(ctx *BenchmarkContext, payloadSize uint64) {
+	var records []Record
 	// run a test per thread count and object size combination
 	maxRecord := Record{
 		TotalBytes:      0,
@@ -65,15 +75,36 @@ func (m *BurstBenchmarkMode) ExecuteBenchmark(ctx *BenchmarkContext, payloadSize
 			ctx.NumberOfRuns++
 			numberOfRuns++
 			record := m.execTest(ctx, t, payloadSize, ctx.NumberOfRuns)
-			if record.ThroughputBps() > maxRecord.ThroughputBps() {
-				maxRecord = record
-			}
-			//fmt.Printf("%d %d %4.3f %4.3f\n", record.Threads, record.ObjectsCount, record.ThroughputMBps(), maxRecord.ThroughputMBps())
+			records = append(records, record)
 			if m.IsFinished(numberOfRuns) {
 				break
 			}
 		}
 	}
+
+	// calculate the summary statistics for the first byte latencies
+	sort.Sort(ByThroughputBps(records))
+	maxRecord = records[len(records)-1]
+	maxRecord.Throughput = make(map[string]float64)
+	dataPoints := Mapf(records, func(r Record) float64 {
+		return r.ThroughputMBps()
+	})
+
+	quartiles, _ := stats.Quartile(dataPoints)
+	maxRecord.Throughput["q1"] = quartiles.Q1
+	maxRecord.Throughput["q2"] = quartiles.Q2
+	maxRecord.Throughput["q3"] = quartiles.Q3
+	maxRecord.Throughput["stdev"], _ = stats.StandardDeviation(dataPoints)
+	maxRecord.Throughput["var"], _ = stats.Variance(dataPoints)
+	maxRecord.Throughput["min"], _ = stats.Min(dataPoints)
+	maxRecord.Throughput["avg"], _ = stats.Mean(dataPoints)
+	maxRecord.Throughput["p25"], _ = stats.Percentile(dataPoints, 25)
+	maxRecord.Throughput["p50"], _ = stats.Percentile(dataPoints, 50)
+	maxRecord.Throughput["p75"], _ = stats.Percentile(dataPoints, 75)
+	maxRecord.Throughput["p90"], _ = stats.Percentile(dataPoints, 90)
+	maxRecord.Throughput["p99"], _ = stats.Percentile(dataPoints, 99)
+	maxRecord.Throughput["max"], _ = stats.Max(dataPoints)
+
 	m.PrintRecord(maxRecord)
 	ctx.Report.Records = append(ctx.Report.Records, maxRecord)
 }

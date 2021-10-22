@@ -21,6 +21,7 @@ type Record struct {
 	TLSHandshake     map[string]float64 `json:"tls_latency_ms"`
 	ServerProcessing map[string]float64 `json:"server_latency_ms"`
 	Unassigned       map[string]float64 `json:"unassigned_latency_ms"`
+	Throughput       map[string]float64 `json:"throughput"`
 }
 
 func (r *Record) ThroughputMBps() float64 {
@@ -29,4 +30,19 @@ func (r *Record) ThroughputMBps() float64 {
 
 func (r *Record) ThroughputBps() float64 {
 	return (float64(r.TotalBytes)) / r.DurationSeconds
+}
+
+// comparator to sort by throughput
+type ByThroughputBps []Record
+
+func (a ByThroughputBps) Len() int           { return len(a) }
+func (a ByThroughputBps) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByThroughputBps) Less(i, j int) bool { return a[i].ThroughputBps() < a[j].ThroughputBps() }
+
+func Mapf(vs []Record, f func(Record) float64) []float64 {
+	vsm := make([]float64, len(vs))
+	for i, v := range vs {
+		vsm[i] = f(v)
+	}
+	return vsm
 }

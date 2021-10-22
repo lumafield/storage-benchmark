@@ -40,9 +40,6 @@ var logPath string
 // a test mode to find the maximum throughput for different object sizes
 var burstMode bool
 
-// flag for a load test
-var infiniteMode bool
-
 // the context for this benchmark includes everything that's needed to run the benchmark
 var ctx *sbmark.BenchmarkContext
 

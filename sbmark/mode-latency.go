@@ -35,7 +35,7 @@ func (m *LatencyBenchmarkMode) PrintHeader(operationToTest string) {
 		`                                                    time-to-first-byte:%-9s    |`+"\n"+
 		`                                                                        time-to-last-byte:%-8s`+"\n\n",
 		2, 5, 153, 14, 326,
-		"2ms", "7ms", "16ms", "174ms", "500ms")
+		"2ms", "7ms", "160ms", "174ms", "500ms")
 }
 
 func (m *LatencyBenchmarkMode) PrintPayloadHeader(objectSize uint64, operationToTest string) {
