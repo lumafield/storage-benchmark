@@ -1,6 +1,7 @@
 package sbmark
 
 type Report struct {
+	Uuid        string   `json:"uuid"`       // A unique id for this benchmark report.
 	ClientEnv   string   `json:"client_env"` // Description of the environment from which the benchmark has been executed.
 	ServerEnv   string   `json:"server_env"` // Description of the environment of the test target.
 	DateTimeUTC string   `json:"datetime_utc"`

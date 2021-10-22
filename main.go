@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/iternity-dotcom/storage-benchmark/sbmark"
+	uuid "github.com/satori/go.uuid"
 )
 
 const bucketNamePrefix = "storage-benchmark"
@@ -138,6 +139,7 @@ func runBenchmark() {
 
 	// Init the final report
 	ctx.Report = sbmark.Report{
+		Uuid:        uuid.NewV4().String(),
 		ClientEnv:   fmt.Sprintf("Application: %s, Version: %s, Host: %s, OS: %s", getAppName(), getVersion(), getHostname(), runtime.GOOS),
 		ServerEnv:   ctx.Endpoint, // How can we get some informations about the ServerEnv? Or should this be a CLI param?
 		DateTimeUTC: time.Now().UTC().String(),
