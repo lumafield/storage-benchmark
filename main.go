@@ -38,9 +38,6 @@ var createBucket bool
 // path for log file
 var logPath string
 
-// a test mode to find the maximum throughput for different object sizes
-var burstMode bool
-
 // the context for this benchmark includes everything that's needed to run the benchmark
 var ctx *sbmark.BenchmarkContext
 
