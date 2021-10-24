@@ -50,7 +50,7 @@ type BenchmarkOperation interface {
 }
 
 type BenchmarkContext struct {
-	Description   string `json:"description"`  // An optional description that helps to identify the test run
+	Description   string `json:"-"`            // An optional description that helps to identify the test run
 	Hostname      string `json:"hostname"`     // the hostname where this benchmark is executed from
 	Region        string `json:"region"`       // S3 region
 	Endpoint      string `json:"endpoint"`     // the endpoint URL or path where the operations are directed to
