@@ -2,8 +2,10 @@ package main
 
 import (
 	"crypto/sha1"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	log2 "log"
 	"os"
 	"path/filepath"
@@ -26,6 +28,9 @@ var githash = "DEV"
 // wether to display the version information
 var showVersion bool
 
+// if not empty, all .json output file on this path will be parsed and fixed to match the current version of the model.
+var fixJsonPath string
+
 // if not empty, the results of the test are saved as .csv file
 var csvFileName string
 
@@ -46,6 +51,10 @@ func main() {
 	parseFlags()
 	if showVersion {
 		displayVersion()
+		return
+	}
+	if fixJsonPath != "" {
+		fixJsonFiles()
 		return
 	}
 	if createBucket {
@@ -71,11 +80,19 @@ func parseFlags() {
 	createBucketArg := flag.Bool("create-bucket", false, "create new bucket(default false)")
 	logPathArg := flag.String("log-path", "", "Specify the path of the log file. Default is 'currentDir'")
 	modeArg := flag.String("mode", "latency", "What do you want to measure? Choose 'latency' or 'burst'. Default is 'latency'")
+	fixJsonArg := flag.String("fix-json", "", "A path to search for .json reports to be parsed and fixed, so that they match the current version of storage-benchmark.")
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
 
 	showVersion = *versionArg
+	fixJsonPath = *fixJsonArg
+
+	// Stop parsing flags if -version or -fix-json arguments are there
+	if showVersion || fixJsonPath != "" {
+		return
+	}
+
 	csvFileName = *csvArg
 	jsonFileName = *jsonArg
 	createBucket = *createBucketArg
@@ -112,6 +129,124 @@ func parseFlags() {
 
 func displayVersion() {
 	fmt.Printf("%s version %s", getAppName(), getVersion())
+}
+
+// Try to transform existing storage-benchmark .json files to the current model.
+// The function creates a new .json file, if the existing file can be transformed.
+// The function is idempotent, so it can be safely executed multiple times.
+// It will ignore files that does not end with .json or that doesn't seem to be a valid storage-benchmark result.
+func fixJsonFiles() {
+	fileList := make([]string, 0)
+	e := filepath.Walk(fixJsonPath, func(path string, f os.FileInfo, err error) error {
+		if filepath.Ext(path) == ".json" && !strings.HasSuffix(path, githash+".json") {
+			fileList = append(fileList, path)
+		}
+		return err
+	})
+
+	if e != nil {
+		panic(e)
+	}
+
+	for _, file := range fileList {
+		// Parse in a generic way and try to transform the model
+		var genericModel map[string]interface{}
+		jsonData, err := ioutil.ReadFile(file)
+		if err != nil {
+			fmt.Printf("Couldn't read file %s. Error: %v\n", file, err)
+			continue
+		}
+		err = json.Unmarshal(jsonData, &genericModel)
+		if err != nil {
+			fmt.Printf("Couldn't unmarshal file %s. Error: %v\n", file, err)
+			continue
+		}
+
+		// Verify if this is a storage-benchmark result file
+		_, hostnameExists := genericModel["hostname"]
+		_, endpointExists := genericModel["endpoint"]
+		_, operationExists := genericModel["operation"]
+		_, reportExists := genericModel["report"]
+		if !hostnameExists || !endpointExists || !operationExists || !reportExists {
+			fmt.Printf("Skipping %s. This doesn't seem to be a storage-benchmark result file.\n", file)
+			continue
+		}
+
+		// Remove ignored interface{} values that can conflict with primitive values
+		if genericModel["Mode"] != nil {
+			delete(genericModel, "Mode")
+		}
+		if genericModel["Operation"] != nil {
+			delete(genericModel, "Operation")
+		}
+
+		// Marshal fixed model to []byte
+		jsonData, err = json.Marshal(genericModel)
+		if err != nil {
+			fmt.Printf("Couldn't marshal content of file %s. Error: %v\n", file, err)
+			continue
+		}
+
+		// Unmarshal to existing BenchmarkContext model
+		b, err := sbmark.FromJsonByteArray(jsonData)
+		if err != nil {
+			fmt.Printf("Couldn't unmarshal modified content of file %s. Error: %v\n", file, err)
+			continue
+		}
+
+		// Create Uuid if missing
+		if b.Report.Uuid == "" {
+			uuid := uuid.NewV4().String()
+			// Try to get a UUID from an already transformed .json file
+			fixedJsonFile := getFixedJsonFileName(file)
+			fixedJsonData, err := ioutil.ReadFile(fixedJsonFile)
+			if err == nil {
+				fb, err := sbmark.FromJsonByteArray(fixedJsonData)
+				if err == nil {
+					uuid = fb.Report.Uuid
+				}
+			}
+			b.Report.Uuid = uuid
+		}
+
+		// Move description from BenchmarkContext to BenchmarkReport
+		if b.Description != "" && b.Report.Description == "" {
+			b.Report.Description = b.Description
+		}
+
+		// Transform Records
+		for i := range b.Report.Records {
+			if b.Report.Records[i].ObjectSizeBytes > 0 && b.Report.Records[i].TotalBytes == 0 {
+				b.Report.Records[i].TotalBytes = b.Report.Records[i].ObjectSizeBytes
+			}
+			if b.Report.Records[i].ObjectsCount == 0 {
+				b.Report.Records[i].ObjectsCount = uint64(b.Samples)
+			}
+			if b.Report.Records[i].SingleObjectSize == 0 && b.Report.Records[i].ObjectSizeBytes > 0 && b.Samples > 0 {
+				b.Report.Records[i].SingleObjectSize = b.Report.Records[i].ObjectSizeBytes / uint64(b.Samples)
+			}
+		}
+
+		jsonData, err = sbmark.ToJson(b)
+		if err != nil {
+			fmt.Printf("Couldn't marshal modified content of file %s. Error: %v\n", file, err)
+			continue
+		}
+
+		// Create a new file containing the transformed model
+		newFile := getFixedJsonFileName(file)
+		err = os.WriteFile(newFile, jsonData, 0644)
+		if err != nil {
+			fmt.Printf("Couldn't create file %s. Error: %v\n", newFile, err)
+			continue
+		}
+		fmt.Printf("Processed %s. Created %s\n", file, newFile)
+	}
+}
+
+func getFixedJsonFileName(origFile string) string {
+	origFileWithoutExt := strings.Replace(origFile, filepath.Ext(origFile), "", 1)
+	return fmt.Sprintf("%s.%s.json", origFileWithoutExt, githash)
 }
 
 func createLogger(prefix string) *log2.Logger {

@@ -49,6 +49,7 @@ vendor/
 *.log
 *.json
 *.csv
+testdata
 
 # Allow
 !storage-benchmark.exe

@@ -12,6 +12,7 @@ type Report struct {
 type Record struct {
 	Operation        string             `json:"operation"` // read, write, ...
 	TotalBytes       uint64             `json:"total_bytes"`
+	ObjectSizeBytes  uint64             `json:"object_size_bytes"` // deprecated field for TotalBytes.
 	SingleObjectSize uint64             `json:"single_object_size_bytes"`
 	ObjectsCount     uint64             `json:"objects_count"`
 	DurationSeconds  float64            `json:"duration_secs"`
