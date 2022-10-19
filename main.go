@@ -83,21 +83,16 @@ func parseFlags() {
 	createBucketArg := flag.Bool("create-bucket", false, "create new bucket(default false)")
 	logPathArg := flag.String("log-path", "", "Specify the path of the log file. Default is 'currentDir'")
 	modeArg := flag.String("mode", "latency", "What do you want to measure? Choose 'latency' or 'burst'. Default is 'latency'")
-	fixJsonArg := flag.String("fix-json", "", "A path to search for .json reports to be parsed and fixed, so that they match the current version of storage-benchmark.")
+	fixArg := flag.Bool("fix", false, "If set all .json reports given with the -json option will be parsed and fixed, so that they match the current version of storage-benchmark.")
 	printArg := flag.Bool("print", false, "If set all .json reports given with -json option will be printed using the standard console output format.")
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
 
 	showVersion = *versionArg
-	if *fixJsonArg != "" {
-		jsonPath = *fixJsonArg
-		fix = true
-	}
-	if *jsonArg != "" {
-		jsonPath = *jsonArg
-	}
+	fix = *fixArg
 	print = *printArg
+	jsonPath = *jsonArg
 
 	// Stop parsing flags if -version or -fix-json arguments are there
 	if showVersion || fix || print {
