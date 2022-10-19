@@ -22,7 +22,7 @@ func (m *BurstBenchmarkMode) IsFinished(numberOfRuns int) bool {
 }
 
 func (m *BurstBenchmarkMode) PrintHeader(operationToTest string) {
-	fmt.Print("\n--- BENCHMARK - Burst ---------------------------------------------------------------------------------------------------------\n\n")
+	fmt.Print("\n--- BENCHMARK - Burst -----------------------------------------------------------------------------------------------------------------------------------------\n\n")
 
 	// prints the table header for the test results
 	fmt.Printf("Max throughput for operation '%s' \n", operationToTest)

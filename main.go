@@ -28,14 +28,17 @@ var githash = "DEV"
 // wether to display the version information
 var showVersion bool
 
-// if not empty, all .json output file on this path will be parsed and fixed to match the current version of the model.
-var fixJsonPath string
+// if true, all given .json output files will be parsed and fixed to match the current version of the model.
+var fix bool
+
+// if true, all given .json output files will be parsed and printed to the console using the standard console output format.
+var print bool
 
 // if not empty, the results of the test are saved as .csv file
 var csvFileName string
 
-// if not empty, the results of the test are saved as .json file
-var jsonFileName string
+// holds a path to a .json file or a path where to find multiple .json files
+var jsonPath string
 
 // whether to create a bucket on startup
 var createBucket bool
@@ -53,7 +56,7 @@ func main() {
 		displayVersion()
 		return
 	}
-	if fixJsonPath != "" {
+	if fix || print {
 		fixJsonFiles()
 		return
 	}
@@ -81,20 +84,27 @@ func parseFlags() {
 	logPathArg := flag.String("log-path", "", "Specify the path of the log file. Default is 'currentDir'")
 	modeArg := flag.String("mode", "latency", "What do you want to measure? Choose 'latency' or 'burst'. Default is 'latency'")
 	fixJsonArg := flag.String("fix-json", "", "A path to search for .json reports to be parsed and fixed, so that they match the current version of storage-benchmark.")
+	printArg := flag.Bool("print", false, "If set all .json reports given with -json option will be printed using the standard console output format.")
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
 
 	showVersion = *versionArg
-	fixJsonPath = *fixJsonArg
+	if *fixJsonArg != "" {
+		jsonPath = *fixJsonArg
+		fix = true
+	}
+	if *jsonArg != "" {
+		jsonPath = *jsonArg
+	}
+	print = *printArg
 
 	// Stop parsing flags if -version or -fix-json arguments are there
-	if showVersion || fixJsonPath != "" {
+	if showVersion || fix || print {
 		return
 	}
 
 	csvFileName = *csvArg
-	jsonFileName = *jsonArg
 	createBucket = *createBucketArg
 	if *logPathArg == "" {
 		logPath, _ = os.Getwd()
@@ -137,7 +147,7 @@ func displayVersion() {
 // It will ignore files that does not end with .json or that doesn't seem to be a valid storage-benchmark result.
 func fixJsonFiles() {
 	fileList := make([]string, 0)
-	e := filepath.Walk(fixJsonPath, func(path string, f os.FileInfo, err error) error {
+	e := filepath.Walk(jsonPath, func(path string, f os.FileInfo, err error) error {
 		if filepath.Ext(path) == ".json" && !strings.HasSuffix(path, githash+".json") {
 			fileList = append(fileList, path)
 		}
@@ -188,60 +198,87 @@ func fixJsonFiles() {
 		}
 
 		// Unmarshal to existing BenchmarkContext model
-		b, err := sbmark.FromJsonByteArray(jsonData)
+		ctx, err := sbmark.FromJsonByteArray(jsonData)
+		ctx.Start()
 		if err != nil {
 			fmt.Printf("Couldn't unmarshal modified content of file %s. Error: %v\n", file, err)
 			continue
 		}
 
-		// Create Uuid if missing
-		if b.Report.Uuid == "" {
-			uuid := uuid.NewV4().String()
-			// Try to get a UUID from an already transformed .json file
-			fixedJsonFile := getFixedJsonFileName(file)
-			fixedJsonData, err := ioutil.ReadFile(fixedJsonFile)
-			if err == nil {
-				fb, err := sbmark.FromJsonByteArray(fixedJsonData)
-				if err == nil {
-					uuid = fb.Report.Uuid
-				}
-			}
-			b.Report.Uuid = uuid
+		if fix {
+			fixJson(ctx, file)
 		}
 
-		// Move description from BenchmarkContext to BenchmarkReport
-		if b.Description != "" && b.Report.Description == "" {
-			b.Report.Description = b.Description
+		if print {
+			printJson(ctx)
 		}
-
-		// Transform Records
-		for i := range b.Report.Records {
-			if b.Report.Records[i].ObjectSizeBytes > 0 && b.Report.Records[i].TotalBytes == 0 {
-				b.Report.Records[i].TotalBytes = b.Report.Records[i].ObjectSizeBytes
-			}
-			if b.Report.Records[i].ObjectsCount == 0 {
-				b.Report.Records[i].ObjectsCount = uint64(b.Samples)
-			}
-			if b.Report.Records[i].SingleObjectSize == 0 && b.Report.Records[i].ObjectSizeBytes > 0 && b.Samples > 0 {
-				b.Report.Records[i].SingleObjectSize = b.Report.Records[i].ObjectSizeBytes / uint64(b.Samples)
-			}
-		}
-
-		jsonData, err = sbmark.ToJson(b)
-		if err != nil {
-			fmt.Printf("Couldn't marshal modified content of file %s. Error: %v\n", file, err)
-			continue
-		}
-
-		// Create a new file containing the transformed model
-		newFile := getFixedJsonFileName(file)
-		err = os.WriteFile(newFile, jsonData, 0644)
-		if err != nil {
-			fmt.Printf("Couldn't create file %s. Error: %v\n", newFile, err)
-			continue
-		}
-		fmt.Printf("Processed %s. Created %s\n", file, newFile)
 	}
+}
+
+func fixJson(ctx *sbmark.BenchmarkContext, file string) {
+	// Create Uuid if missing
+	if ctx.Report.Uuid == "" {
+		uuid := uuid.NewV4().String()
+		// Try to get a UUID from an already transformed .json file
+		fixedJsonFile := getFixedJsonFileName(file)
+		fixedJsonData, err := ioutil.ReadFile(fixedJsonFile)
+		if err == nil {
+			fb, err := sbmark.FromJsonByteArray(fixedJsonData)
+			if err == nil {
+				uuid = fb.Report.Uuid
+			}
+		}
+		ctx.Report.Uuid = uuid
+	}
+
+	// Move description from BenchmarkContext to BenchmarkReport
+	if ctx.Description != "" && ctx.Report.Description == "" {
+		ctx.Report.Description = ctx.Description
+	}
+
+	// Transform Records
+	for i := range ctx.Report.Records {
+		if ctx.Report.Records[i].ObjectSizeBytes > 0 && ctx.Report.Records[i].TotalBytes == 0 {
+			ctx.Report.Records[i].TotalBytes = ctx.Report.Records[i].ObjectSizeBytes
+		}
+		if ctx.Report.Records[i].ObjectsCount == 0 {
+			ctx.Report.Records[i].ObjectsCount = uint64(ctx.Samples)
+		}
+		if ctx.Report.Records[i].SingleObjectSize == 0 && ctx.Report.Records[i].ObjectSizeBytes > 0 && ctx.Samples > 0 {
+			ctx.Report.Records[i].SingleObjectSize = ctx.Report.Records[i].ObjectSizeBytes / uint64(ctx.Samples)
+		}
+	}
+	jsonData, err := sbmark.ToJson(ctx)
+	if err != nil {
+		fmt.Printf("Couldn't marshal modified content of file %s. Error: %v\n", file, err)
+		return
+	}
+	// Create a new file containing the transformed model
+	newFile := getFixedJsonFileName(file)
+	err = os.WriteFile(newFile, jsonData, 0644)
+	if err != nil {
+		fmt.Printf("Couldn't create file %s. Error: %v\n", newFile, err)
+		return
+	}
+	fmt.Printf("Processed %s. Created %s\n", file, newFile)
+}
+
+func printJson(ctx *sbmark.BenchmarkContext) {
+	ctx.PrintSettings()
+	ctx.Mode.PrintHeader(ctx.OperationName)
+	payloadSize := uint64(0)
+	for _, r := range ctx.Report.Records {
+		if payloadSize != 0 && payloadSize != r.SingleObjectSize {
+			ctx.Mode.PrintPayloadFooter()
+		}
+		if payloadSize != r.SingleObjectSize {
+			payloadSize = r.SingleObjectSize
+			ctx.Mode.PrintPayloadHeader(payloadSize, ctx.OperationName)
+		}
+		ctx.Mode.PrintRecord(r)
+	}
+	ctx.Mode.PrintPayloadFooter()
+	ctx.Mode.PrintFooter()
 }
 
 func getFixedJsonFileName(origFile string) string {
@@ -282,6 +319,7 @@ func runBenchmark() {
 	// an object size iterator that starts from 1 KB and doubles the size on every iteration
 	generatePayload := payloadSizeGenerator()
 
+	ctx.PrintSettings()
 	ctx.Mode.PrintHeader(ctx.OperationName)
 
 	// loop over every payload size (we need to start at p := 1 because of the generatePayload() function)
@@ -317,16 +355,16 @@ func runBenchmark() {
 	}
 
 	// if the json option is set, save the report as .json
-	if jsonFileName != "" {
+	if jsonPath != "" {
 		jsonReport, err := sbmark.ToJson(ctx)
 		if err != nil {
 			panic("Failed to create .json output: " + err.Error())
 		}
-		err = os.WriteFile(jsonFileName, jsonReport, 0644)
+		err = os.WriteFile(jsonPath, jsonReport, 0644)
 		if err != nil {
 			panic("Failed to create .json output: " + err.Error())
 		}
-		fmt.Printf("JSON results were written to %s\n", jsonFileName)
+		fmt.Printf("JSON results were written to %s\n", jsonPath)
 	}
 }
 
