@@ -83,6 +83,9 @@ type BenchmarkContext struct {
 	InfoLogger    *log2.Logger `json:"-"`
 	WarningLogger *log2.Logger `json:"-"`
 	ErrorLogger   *log2.Logger `json:"-"`
+
+	// Whether a connection pooling should be 'enabled' or 'disabled'. If not specified or set to 'mode' the default value of the BenchmarkMode is used.
+	KeepAlive string `json:"-"`
 }
 
 func (ctx *BenchmarkContext) Start() error {
@@ -107,8 +110,19 @@ func (ctx *BenchmarkContext) setupClient() {
 			Region:            ctx.Region,
 			Endpoint:          ctx.Endpoint,
 			Insecure:          true,
-			DisableKeepAlives: ctx.Mode.DisableKeepAlives(),
+			DisableKeepAlives: ctx.disableKeepAlives(),
 		})
+	}
+}
+
+func (ctx *BenchmarkContext) disableKeepAlives() bool {
+	switch strings.ToLower(ctx.KeepAlive) {
+	case "enabled":
+		return false
+	case "disabled":
+		return true
+	default:
+		return ctx.Mode.DisableKeepAlives()
 	}
 }
 
