@@ -34,6 +34,7 @@ curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/build/l
 
 ```
 curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/build/windows-amd64/storage-benchmark
+```
 
 ### S3 Credentials
 
