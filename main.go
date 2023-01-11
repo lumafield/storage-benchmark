@@ -81,6 +81,7 @@ func parseFlags() {
 	logPathArg := flag.String("log-path", "", "Specify the path of the log file. Default is 'currentDir'")
 	modeArg := flag.String("mode", "latency", "What do you want to measure? Choose 'latency' or 'burst'. Default is 'latency'")
 	fixJsonArg := flag.String("fix-json", "", "A path to search for .json reports to be parsed and fixed, so that they match the current version of storage-benchmark.")
+	keepAliveArg := flag.String("keepalive", "mode", "Use 'enabled' or 'disabled' to explicitly enable or dissable connection pooling to your endpoint. Use 'mode' to use the default of the specified benchmark mode. Default is 'mode'.")
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
@@ -119,6 +120,7 @@ func parseFlags() {
 		InfoLogger:    createLogger("INFO "),
 		WarningLogger: createLogger("WARNING "),
 		ErrorLogger:   createLogger("ERROR "),
+		KeepAlive:     *keepAliveArg,
 	}
 
 	err := ctx.Start()
