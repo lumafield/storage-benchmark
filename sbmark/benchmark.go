@@ -175,6 +175,17 @@ func (ctx *BenchmarkContext) NumberOfThreads() int {
 	return ctx.ThreadsMax - ctx.ThreadsMin + 1
 }
 
+func (ctx *BenchmarkContext) PrintSettings() {
+	fmt.Print("\n--- storage-benchmark - Settings ------------------------------------------------------------------------------------------------------------------------------\n\n")
+	fmt.Printf(`Date:			%s`+"\n"+
+		`Description:	%s`+"\n"+
+		`Client:		%s`+"\n"+
+		`Server:		%s`+"\n"+
+		`Mode:			%s`+"\n"+
+		`Samples:		%d`+"\n",
+		ctx.Report.DateTimeUTC, ctx.Description, ctx.Report.ClientEnv, ctx.Report.ServerEnv, ctx.ModeName, ctx.Samples)
+}
+
 // formats bytes to KB or MB
 func ByteFormat(bytes float64) string {
 	if bytes >= 1024*1024 {

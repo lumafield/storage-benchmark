@@ -22,7 +22,7 @@ func (m *LatencyBenchmarkMode) IsFinished(numberOfRuns int) bool {
 }
 
 func (m *LatencyBenchmarkMode) PrintHeader(operationToTest string) {
-	fmt.Print("\n--- BENCHMARK - Latency ------------------------------------------------------------------------------------------------------\n\n")
+	fmt.Print("\n--- BENCHMARK - Latency ---------------------------------------------------------------------------------------------------------------------------------------\n\n")
 
 	fmt.Printf("Latency Distribution Example (values are hard coded and only for explanation)\n\n")
 	fmt.Printf(``+
