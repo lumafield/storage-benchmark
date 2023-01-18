@@ -85,6 +85,7 @@ func parseFlags() {
 	modeArg := flag.String("mode", "latency", "What do you want to measure? Choose 'latency' or 'burst'. Default is 'latency'")
 	fixArg := flag.Bool("fix", false, "If set all .json reports given with the -json option will be parsed and fixed, so that they match the current version of storage-benchmark.")
 	printArg := flag.Bool("print", false, "If set all .json reports given with -json option will be printed using the standard console output format.")
+	keepAliveArg := flag.String("keepalive", "mode", "Use 'enabled' or 'disabled' to explicitly enable or dissable connection pooling to your endpoint. Use 'mode' to use the default of the specified benchmark mode. Default is 'mode'.")
 
 	// parse the arguments and set all the global variables accordingly
 	flag.Parse()
@@ -124,6 +125,7 @@ func parseFlags() {
 		InfoLogger:    createLogger("INFO "),
 		WarningLogger: createLogger("WARNING "),
 		ErrorLogger:   createLogger("ERROR "),
+		KeepAlive:     *keepAliveArg,
 	}
 
 	err := ctx.Start()

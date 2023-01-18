@@ -21,7 +21,7 @@ curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/build/d
 #### Linux 64-bit x86
 
 ```
-curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/linux-amd64/storage-benchmark
+curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/build/linux-amd64/storage-benchmark
 ```
 
 #### Linux 64-bit ARM
@@ -34,6 +34,7 @@ curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/build/l
 
 ```
 curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/build/windows-amd64/storage-benchmark
+```
 
 ### S3 Credentials
 
