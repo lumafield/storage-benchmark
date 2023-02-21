@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	log2 "log"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -69,10 +70,10 @@ func main() {
 func parseFlags() {
 	versionArg := flag.Bool("version", false, "Displays the version information.")
 	descriptionArg := flag.String("description", "", "The description of your test run run will be added to the .json report.")
-	threadsMinArg := flag.Int("threads-min", 8, "The minimum number of threads to use when fetching objects.")
+	threadsMinArg := flag.Int("threads-min", 1, "The minimum number of threads to use when fetching objects.")
 	threadsMaxArg := flag.Int("threads-max", 16, "The maximum number of threads to use when fetching objects.")
 	payloadsMinArg := flag.Int("payloads-min", 1, "The minimum object size to test, with 1 = 1 KB, and every increment is a double of the previous value.")
-	payloadsMaxArg := flag.Int("payloads-max", 10, "The maximum object size to test, with 1 = 1 KB, and every increment is a double of the previous value.")
+	payloadsMaxArg := flag.Int("payloads-max", 18, "The maximum object size to test, with 1 = 1 KB, and every increment is a double of the previous value.")
 	samplesArg := flag.Int("samples", 50, "The number of samples to collect for each test of a single object size and thread count. Default is 50. Minimum value is 4.")
 	bucketNameArg := flag.String("bucket-name", defaultBucketName, "The target bucket or folder to be used.")
 	regionArg := flag.String("region", "", "Sets the AWS region to use for the S3 bucket. Only applies if the bucket doesn't already exist.")
@@ -96,9 +97,9 @@ func parseFlags() {
 	jsonPath = *jsonArg
 
 	// Stop parsing flags if -version or -fix-json arguments are there
-	if showVersion || fix || print {
-		return
-	}
+	//if showVersion || fix || print {
+	//	return
+	//}
 
 	csvFileName = *csvArg
 	createBucket = *createBucketArg
@@ -195,19 +196,19 @@ func fixJsonFiles() {
 		}
 
 		// Unmarshal to existing BenchmarkContext model
-		ctx, err := sbmark.FromJsonByteArray(jsonData)
-		ctx.Start()
+		jsonCtx, err := sbmark.FromJsonByteArray(jsonData)
+		jsonCtx.Start()
 		if err != nil {
 			fmt.Printf("Couldn't unmarshal modified content of file %s. Error: %v\n", file, err)
 			continue
 		}
 
 		if fix {
-			fixJson(ctx, file)
+			fixJson(jsonCtx, file)
 		}
 
 		if print {
-			printJson(ctx)
+			printJson(jsonCtx, ctx)
 		}
 	}
 }
@@ -260,22 +261,35 @@ func fixJson(ctx *sbmark.BenchmarkContext, file string) {
 	fmt.Printf("Processed %s. Created %s\n", file, newFile)
 }
 
-func printJson(ctx *sbmark.BenchmarkContext) {
-	ctx.PrintSettings()
-	ctx.Mode.PrintHeader(ctx.OperationName)
+func printJson(jsonCtx *sbmark.BenchmarkContext, cliCtx *sbmark.BenchmarkContext) {
+	jsonCtx.PrintSettings()
+	jsonCtx.Mode.PrintHeader(jsonCtx.OperationName)
 	payloadSize := uint64(0)
-	for _, r := range ctx.Report.Records {
+	minPayloadSize := getPayloadSize(cliCtx.PayloadsMin)
+	maxPayloadSize := getPayloadSize(cliCtx.PayloadsMax)
+	minThreads := cliCtx.ThreadsMin
+	maxThreads := cliCtx.ThreadsMax
+	for _, r := range jsonCtx.Report.Records {
 		if payloadSize != 0 && payloadSize != r.SingleObjectSize {
-			ctx.Mode.PrintPayloadFooter()
+			if payloadSize == maxPayloadSize {
+				break
+			}
+			if payloadSize >= minPayloadSize {
+				jsonCtx.Mode.PrintPayloadFooter()
+			}
 		}
 		if payloadSize != r.SingleObjectSize {
 			payloadSize = r.SingleObjectSize
-			ctx.Mode.PrintPayloadHeader(payloadSize, ctx.OperationName)
+			if payloadSize >= minPayloadSize {
+				jsonCtx.Mode.PrintPayloadHeader(payloadSize, jsonCtx.OperationName)
+			}
 		}
-		ctx.Mode.PrintRecord(r)
+		if payloadSize >= minPayloadSize && r.Threads >= minThreads && r.Threads <= maxThreads {
+			jsonCtx.Mode.PrintRecord(r)
+		}
 	}
-	ctx.Mode.PrintPayloadFooter()
-	ctx.Mode.PrintFooter()
+	jsonCtx.Mode.PrintPayloadFooter()
+	jsonCtx.Mode.PrintFooter()
 }
 
 func getFixedJsonFileName(origFile string) string {
@@ -395,4 +409,16 @@ func payloadSizeGenerator() func() uint64 {
 		nextPayloadSize *= 2
 		return thisPayloadSize
 	}
+}
+
+// returns the payload size of the i-th iteration.
+// i=1 => 1024
+// i=2 => 2048
+// i=3 => 4096
+// ...
+func getPayloadSize(i int) uint64 {
+	if i < 1 {
+		return 0
+	}
+	return uint64(math.Pow(2, float64(i-1)) * 1024)
 }
