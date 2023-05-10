@@ -101,18 +101,12 @@ func (ctx *BenchmarkContext) Start() error {
 }
 
 func (ctx *BenchmarkContext) setupClient() {
-	if !strings.HasPrefix(strings.ToLower(ctx.Endpoint), "http") {
-		ctx.Client = NewFsClient(&FsObjectClientConfig{
-			RootPath: ctx.Endpoint,
-		})
-	} else {
-		ctx.Client = NewS3Client(&S3ObjectClientConfig{
-			Region:            ctx.Region,
-			Endpoint:          ctx.Endpoint,
-			Insecure:          true,
-			DisableKeepAlives: ctx.disableKeepAlives(),
-		})
-	}
+	ctx.Client = NewS3Client(&S3ObjectClientConfig{
+		Region:            ctx.Region,
+		Endpoint:          ctx.Endpoint,
+		Insecure:          true,
+		DisableKeepAlives: ctx.disableKeepAlives(),
+	})
 }
 
 func (ctx *BenchmarkContext) disableKeepAlives() bool {
