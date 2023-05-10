@@ -1,7 +1,7 @@
 # Storage Benchmark
 
 (Originally forked from dvassallo/s3-benchmark)
-(then forked from dvassallo/s3-benchmark)
+(then forked from iternity-dotcom/s3-benchmark)
 
 The performance of a storage system depends on 3 things:
 1. Your distance to the storage endpoint.
@@ -12,29 +12,33 @@ With this tool you can measure the performance of different file and object (S3)
 
 ## Usage
 
+### Running
+e.g. `./build/linux-amd64/storage-benchmark -bucket-name nick-sandbox -region us-east-1`
+
+
 ### Download
 
 #### macOS
 ```
-curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/build/darwin-amd64/storage-benchmark
+curl -OL https://github.com/lumafield/storage-benchmark/raw/master/build/darwin-amd64/storage-benchmark
 ```
 
 #### Linux 64-bit x86
 
 ```
-curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/build/linux-amd64/storage-benchmark
+curl -OL https://github.com/lumafield/storage-benchmark/raw/master/build/linux-amd64/storage-benchmark
 ```
 
 #### Linux 64-bit ARM
 
 ```
-curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/build/linux-arm64/storage-benchmark
+curl -OL https://github.com/lumafield/storage-benchmark/raw/master/build/linux-arm64/storage-benchmark
 ```
 
 #### Windows 64-bit x86
 
 ```
-curl -OL https://github.com/iternity-dotcom/storage-benchmark/raw/master/build/windows-amd64/storage-benchmark
+curl -OL https://github.com/lumafield/storage-benchmark/raw/master/build/windows-amd64/storage-benchmark
 ```
 
 ### S3 Credentials

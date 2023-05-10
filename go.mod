@@ -1,4 +1,4 @@
-module github.com/iternity-dotcom/storage-benchmark
+module github.com/lumafield/storage-benchmark
 
 go 1.15
 

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/iternity-dotcom/storage-benchmark/sbmark"
+	"github.com/lumafield/storage-benchmark/sbmark"
 	uuid "github.com/satori/go.uuid"
 )
 
