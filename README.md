@@ -12,6 +12,16 @@ With this tool you can measure the performance of different file and object (S3)
 
 ## Usage
 
+### Build
+
+curl https://dl.google.com/go/go1.20.4.linux-amd64.tar.gz -o go1.20.4.linux-amd64.tar.gz
+rm -rf /usr/local/go && tar -C /usr/local -xzf go1.20.4.linux-amd64.tar.gz
+export PATH=$PATH:/usr/local/go/bin
+
+go get ...
+./go-build-all
+
+
 ### Running
 e.g. `./build/linux-amd64/storage-benchmark -bucket-name nick-sandbox -region us-east-1`
 
